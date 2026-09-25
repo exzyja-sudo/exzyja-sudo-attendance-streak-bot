@@ -914,7 +914,13 @@ client.on(Events.InteractionCreate, async interaction => {
       if (missingPermissions) {
         return interaction.reply({ content: 'I need Send Messages and Embed Links permission in both channels.', ephemeral: true });
       }
-      if (!botMember || !channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageRoles)) {
+      if (!botMember) {
+        return interaction.reply({ content: 'I could not verify my permissions in the poll channel. Please try again.', ephemeral: true });
+      }
+      if (!channel.permissionsFor(botMember)?.has(PermissionFlagsBits.MentionEveryone)) {
+        return interaction.reply({ content: 'I need Mention @everyone permission in the poll channel to notify everyone when the poll opens.', ephemeral: true });
+      }
+      if (!channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageRoles)) {
         return interaction.reply({ content: 'I need Manage Permissions (Manage Roles) in the poll channel to control poll visibility.', ephemeral: true });
       }
       try {
@@ -930,7 +936,11 @@ client.on(Events.InteractionCreate, async interaction => {
         .setDescription(options.map((option, index) => `${POLL_EMOJIS[index]} **${option}**`).join('\n'))
         .setFooter({ text: `Poll closes in ${durationText} • React with one option` })
         .setTimestamp();
-      const pollMessage = await channel.send({ embeds: [pollEmbed] });
+      const pollMessage = await channel.send({
+        content: '@everyone',
+        embeds: [pollEmbed],
+        allowedMentions: { parse: ['everyone'] },
+      });
       for (let index = 0; index < options.length; index += 1) {
         await pollMessage.react(POLL_EMOJIS[index]);
       }
