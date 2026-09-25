@@ -61,6 +61,56 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('schedule-announcement')
+    .setDescription('Schedule a future or yearly announcement')
+    .addChannelOption(opt =>
+      opt.setName('channel').setDescription('Channel where the announcement will be posted').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('date').setDescription('Date in YYYY-MM-DD format').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('time').setDescription('Local time in 24-hour HH:MM format').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('timezone').setDescription('IANA timezone, e.g. Asia/Manila').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('type').setDescription('Announcement type').setRequired(true)
+        .addChoices(
+          { name: 'General announcement', value: 'general' },
+          { name: 'Birthday celebration', value: 'birthday' },
+        ))
+    .addStringOption(opt =>
+      opt.setName('recurrence').setDescription('Choose how often to post the announcement').setRequired(true)
+        .addChoices(
+          { name: 'Once', value: 'once' },
+          { name: 'Every day', value: 'daily' },
+          { name: 'Every week', value: 'weekly' },
+          { name: 'Every year', value: 'yearly' },
+        ))
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member for a birthday celebration').setRequired(false))
+    .addStringOption(opt =>
+      opt.setName('title').setDescription('General announcement title').setRequired(false))
+    .addStringOption(opt =>
+      opt.setName('subject').setDescription('General announcement subject').setRequired(false))
+    .addStringOption(opt =>
+      opt.setName('message').setDescription('General announcement details').setRequired(false))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('poll')
+    .setDescription('Create a reaction poll and announce the outcome later')
+    .addChannelOption(opt =>
+      opt.setName('channel').setDescription('Channel where the poll will be posted').setRequired(true))
+    .addChannelOption(opt =>
+      opt.setName('outcome-channel').setDescription('Channel for the final poll result').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(256))
+    .addStringOption(opt =>
+      opt.setName('options').setDescription('Options separated with |, for example Yes | No').setRequired(true).setMaxLength(1000))
+    .addIntegerOption(opt =>
+      opt.setName('duration').setDescription('How many minutes the poll stays open').setRequired(true).setMinValue(1).setMaxValue(10080))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('post-attendance-now')
     .setDescription('Manually post today\'s attendance message right now')
     .toJSON(),

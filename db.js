@@ -79,6 +79,35 @@ db.exec(`
     role_ids TEXT NOT NULL,
     PRIMARY KEY (guild_id, user_id)
   );
+
+  CREATE TABLE IF NOT EXISTS scheduled_announcements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    scheduled_date TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    minute INTEGER NOT NULL,
+    timezone TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'general',
+    recurrence TEXT NOT NULL DEFAULT 'once',
+    title TEXT,
+    subject TEXT,
+    message TEXT,
+    user_id TEXT,
+    last_sent_date TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS polls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    outcome_channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    options TEXT NOT NULL,
+    closes_at INTEGER NOT NULL,
+    closed_at INTEGER
+  );
 `);
 
 // ---- lightweight migration: add shield columns to older DBs without them ----
@@ -140,6 +169,43 @@ function getConfig(guildId) {
 
 function getAllConfigs() {
   return db.prepare('SELECT * FROM config').all();
+}
+
+function createScheduledAnnouncement({ guildId, channelId, scheduledDate, hour, minute, timezone, kind, recurrence, title, subject, message, userId }) {
+  const result = db.prepare(`
+    INSERT INTO scheduled_announcements
+      (guild_id, channel_id, scheduled_date, hour, minute, timezone, kind, recurrence, title, subject, message, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(guildId, channelId, scheduledDate, hour, minute, timezone, kind, recurrence, title || null, subject || null, message || null, userId || null);
+  return result.lastInsertRowid;
+}
+
+function getAllScheduledAnnouncements() {
+  return db.prepare('SELECT * FROM scheduled_announcements ORDER BY scheduled_date, hour, minute, id').all();
+}
+
+function markScheduledAnnouncementSent(id, dateStr) {
+  db.prepare('UPDATE scheduled_announcements SET last_sent_date = ? WHERE id = ?').run(dateStr, id);
+}
+
+function createPoll({ guildId, channelId, outcomeChannelId, messageId, question, options, closesAt }) {
+  const result = db.prepare(`
+    INSERT INTO polls (guild_id, channel_id, outcome_channel_id, message_id, question, options, closes_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(guildId, channelId, outcomeChannelId, messageId, question, JSON.stringify(options), closesAt);
+  return result.lastInsertRowid;
+}
+
+function getDuePolls(now = Date.now()) {
+  return db.prepare(`
+    SELECT * FROM polls
+    WHERE closed_at IS NULL AND closes_at <= ?
+    ORDER BY closes_at, id
+  `).all(now);
+}
+
+function markPollClosed(id, closedAt = Date.now()) {
+  db.prepare('UPDATE polls SET closed_at = ? WHERE id = ?').run(closedAt, id);
 }
 
 // ---- active message tracking (so we know which message is "today's" post) ----
@@ -360,6 +426,12 @@ module.exports = {
   setConfig,
   getConfig,
   getAllConfigs,
+  createScheduledAnnouncement,
+  getAllScheduledAnnouncements,
+  markScheduledAnnouncementSent,
+  createPoll,
+  getDuePolls,
+  markPollClosed,
   setActiveMessage,
   getActiveMessage,
   recordCheckin,

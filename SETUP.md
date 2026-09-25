@@ -164,10 +164,31 @@ If the member is exempt, or there is no saved role snapshot, the command does no
 |---|---|---|
 | `/setup-attendance` | Manage Server | Set the attendance channel, time, timezone, and optional role automation. |
 | `/post-attendance-now` | Anyone with command access | Post an attendance message immediately for testing. |
+| `/schedule-announcement` | Manage Server | Schedule a one-time or yearly general announcement or birthday celebration. Choose the channel, date, time, timezone, type, and recurrence. |
+| `/announcement` | Manage Server | Post an announcement immediately. |
+| `/poll` | Manage Server | Create a reaction poll with 2-10 options and announce the result in a separate outcome channel. |
 | `/restore-streak users streak` | Manage Server | Restore the same streak value and monthly shields for one or more members. Enter mentions or IDs separated by spaces or commas. |
 | `/streaks` | Anyone | Show the current streak leaderboard. |
 | `/my-streak` | Anyone | Show your current streak and shields privately. |
 | `/forgive-inactive user` | Manage Server | Restore a member's saved roles and remove the inactive role. |
+
+### Schedule a future announcement
+
+Use `/schedule-announcement` with a date in `YYYY-MM-DD` format and a local time in
+`HH:MM` format. Select `Once`, `Every day`, `Every week`, or `Every year`. Daily posts
+start on the selected date. Weekly posts use the weekday of the selected date.
+General announcements require a title, subject, and message. Birthday celebrations
+require the member and automatically use the birthday greeting. The selected channel
+and timezone are stored with the schedule, and the bot checks for due schedules every
+minute after startup.
+
+### Create a poll
+
+Use `/poll` with a question, a duration in minutes, a poll channel, and an outcome
+channel. Enter options separated by `|`, for example `Yes | No | Maybe`. The bot adds
+numbered reactions, counts non-bot votes when the duration ends, and announces the
+winner, tie, or no-vote result in the outcome channel. Polls are stored in SQLite and
+continue after a bot restart.
 
 ## Disable role automation
 

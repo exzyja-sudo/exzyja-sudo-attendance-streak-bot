@@ -286,6 +286,8 @@ const db = require('./db');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
 
+const POLL_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -299,6 +301,7 @@ const client = new Client({
 // guildId -> node-cron task, so we can reschedule after /setup-attendance
 const scheduledTasks = new Map();
 const attendanceRefreshQueues = new Map();
+let scheduledAnnouncementTask;
 
 function parseExemptionRoleIds(value) {
   if (!value) return [];
@@ -325,6 +328,178 @@ function scheduleGuild(config) {
 
   scheduledTasks.set(config.guild_id, task);
   console.log(`[schedule] Guild ${config.guild_id} -> daily at ${config.hour}:${String(config.minute).padStart(2, '0')} (${config.timezone})`);
+}
+
+function getLocalDateTime(timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  };
+}
+
+function isScheduledAnnouncementDue(schedule, local) {
+  if (schedule.last_sent_date === local.date) return false;
+  const scheduledDate = new Date(`${schedule.scheduled_date}T00:00:00Z`);
+  const localDate = new Date(`${local.date}T00:00:00Z`);
+  const dateMatches = schedule.recurrence === 'yearly'
+    ? schedule.scheduled_date.slice(5) === local.date.slice(5)
+    : schedule.recurrence === 'weekly'
+      ? localDate >= scheduledDate && scheduledDate.getUTCDay() === localDate.getUTCDay()
+      : schedule.recurrence === 'daily'
+        ? localDate >= scheduledDate
+        : schedule.scheduled_date === local.date;
+  return dateMatches && local.minutes >= schedule.hour * 60 + schedule.minute;
+}
+
+async function publishScheduledAnnouncement(schedule) {
+  const channel = await client.channels.fetch(schedule.channel_id).catch(() => null);
+  if (!channel?.isTextBased()) {
+    console.error(`[schedule] Channel ${schedule.channel_id} not found for announcement ${schedule.id}.`);
+    return false;
+  }
+
+  let embed;
+  if (schedule.kind === 'birthday') {
+    const member = await client.guilds.cache.get(schedule.guild_id)?.members.fetch(schedule.user_id).catch(() => null);
+    if (!member) {
+      console.error(`[schedule] Birthday member ${schedule.user_id} not found for announcement ${schedule.id}.`);
+      return false;
+    }
+    embed = new EmbedBuilder()
+      .setColor(0xf1c40f)
+      .setTitle('🎉 Birthday Greetings!')
+      .setDescription([
+        `🎂 ${member} has a **Happy Birthday**!`,
+        '',
+        'Wishing you a fantastic day filled with joy, laughter, and plenty of cake! 🎉',
+      ].join('\n'))
+      .setTimestamp();
+  } else {
+    embed = new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle(`⚠️ ${schedule.title}`)
+      .setDescription(`**${schedule.subject}**`)
+      .addFields(
+        { name: 'Details', value: schedule.message || 'No details provided.' },
+        { name: 'Action Required', value: '⚠️ Reacting to this announcement is mandatory. Officers will know who has already read it.' },
+      )
+      .setFooter({ text: 'Please react with ✅ to confirm you have read this announcement.' });
+  }
+
+  const sentMessage = await channel.send({
+    content: schedule.kind === 'general' ? '@everyone' : undefined,
+    embeds: [embed],
+    allowedMentions: schedule.kind === 'general' ? { parse: ['everyone'] } : undefined,
+  }).catch(err => {
+    console.error(`[schedule] Failed to send announcement ${schedule.id}:`, err.message);
+    return null;
+  });
+  if (!sentMessage) return false;
+
+  if (schedule.kind === 'general') await sentMessage.react('✅').catch(err =>
+    console.error(`[schedule] Failed to add reaction for announcement ${schedule.id}:`, err.message)
+  );
+  return true;
+}
+
+async function processScheduledAnnouncements() {
+  const schedules = db.getAllScheduledAnnouncements();
+  for (const schedule of schedules) {
+    let local;
+    try {
+      local = getLocalDateTime(schedule.timezone);
+    } catch (err) {
+      console.error(`[schedule] Invalid timezone for announcement ${schedule.id}:`, err.message);
+      continue;
+    }
+    if (!isScheduledAnnouncementDue(schedule, local)) continue;
+
+    const sent = await publishScheduledAnnouncement(schedule);
+    if (sent) {
+      db.markScheduledAnnouncementSent(schedule.id, local.date);
+      console.log(`[schedule] Posted announcement ${schedule.id} for guild ${schedule.guild_id}.`);
+    }
+  }
+}
+
+async function closePoll(poll) {
+  let options;
+  try {
+    options = JSON.parse(poll.options);
+  } catch {
+    console.error(`[poll] Invalid options for poll ${poll.id}.`);
+    return false;
+  }
+
+  const pollChannel = await client.channels.fetch(poll.channel_id).catch(() => null);
+  const outcomeChannel = await client.channels.fetch(poll.outcome_channel_id).catch(() => null);
+  if (!pollChannel?.messages?.fetch || !outcomeChannel?.isTextBased()) {
+    console.error(`[poll] Could not fetch channels for poll ${poll.id}.`);
+    return false;
+  }
+
+  const message = await pollChannel.messages.fetch(poll.message_id).catch(() => null);
+  if (!message) {
+    console.error(`[poll] Could not fetch message for poll ${poll.id}.`);
+    return false;
+  }
+
+  const votes = [];
+  for (let index = 0; index < options.length; index += 1) {
+    const reaction = message.reactions.cache.get(POLL_EMOJIS[index]);
+    const users = reaction ? await reaction.users.fetch().catch(() => new Map()) : new Map();
+    votes.push([...users.values()].filter(user => !user.bot).length);
+  }
+
+  const highestVote = Math.max(...votes, 0);
+  const winners = options.filter((option, index) => votes[index] === highestVote && highestVote > 0);
+  const resultLines = options.map((option, index) => `${POLL_EMOJIS[index]} **${option}** — ${votes[index]} vote${votes[index] === 1 ? '' : 's'}`);
+  const outcome = winners.length
+    ? winners.length === 1 ? `🏆 Winner: **${winners[0]}**` : `🤝 Tie: ${winners.map(winner => `**${winner}**`).join(', ')}`
+    : 'No votes were recorded.';
+
+  const resultEmbed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('📊 Poll Results')
+    .setDescription([`**${poll.question}**`, '', ...resultLines, '', outcome].join('\n'))
+    .setFooter({ text: `Poll #${poll.id} closed` })
+    .setTimestamp();
+  const sent = await outcomeChannel.send({ embeds: [resultEmbed] }).catch(err => {
+    console.error(`[poll] Failed to announce result for poll ${poll.id}:`, err.message);
+    return null;
+  });
+  if (!sent) return false;
+
+  const closedEmbed = new EmbedBuilder()
+    .setColor(0x747f8d)
+    .setTitle('📊 Poll Closed')
+    .setDescription([`**${poll.question}**`, '', ...resultLines, '', outcome].join('\n'))
+    .setFooter({ text: `Results announced in <#${poll.outcome_channel_id}>` });
+  await message.edit({ embeds: [closedEmbed] }).catch(err =>
+    console.error(`[poll] Failed to close poll message ${poll.id}:`, err.message)
+  );
+  db.markPollClosed(poll.id);
+  return true;
+}
+
+async function processDuePolls() {
+  for (const poll of db.getDuePolls()) {
+    try {
+      await closePoll(poll);
+    } catch (err) {
+      console.error(`[poll] Failed to close poll ${poll.id}:`, err);
+    }
+  }
 }
 
 // Re-renders the "Checked in (N)" list on today's attendance post to reflect
@@ -470,6 +645,14 @@ client.once(Events.ClientReady, async () => {
   const configs = db.getAllConfigs();
   configs.forEach(scheduleGuild);
   await catchUpMissedPosts(configs);
+  scheduledAnnouncementTask = cron.schedule('* * * * *', () => {
+    Promise.all([
+      processScheduledAnnouncements(),
+      processDuePolls(),
+    ]).catch(err => console.error('[scheduler] Failed to process scheduled work:', err));
+  }, { timezone: 'UTC' });
+  await processScheduledAnnouncements();
+  await processDuePolls();
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -617,6 +800,164 @@ client.on(Events.InteractionCreate, async interaction => {
 
       return interaction.reply({
         content: `✅ Announcement posted in ${channel}. Everyone was mentioned and the ✅ reaction has already been added.`,
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.commandName === 'poll') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('channel', true);
+      const outcomeChannel = interaction.options.getChannel('outcome-channel', true);
+      if (!channel?.isTextBased() || channel.isThread() || !outcomeChannel?.isTextBased() || outcomeChannel.isThread()) {
+        return interaction.reply({ content: 'Choose regular text channels for the poll and its outcome.', ephemeral: true });
+      }
+
+      const question = normalizeAnnouncementText(interaction.options.getString('question', true), 256);
+      const options = interaction.options.getString('options', true)
+        .split('|')
+        .map(option => normalizeAnnouncementText(option, 200))
+        .filter(Boolean);
+      const duration = interaction.options.getInteger('duration', true);
+      if (options.length < 2 || options.length > POLL_EMOJIS.length) {
+        return interaction.reply({ content: `Provide between 2 and ${POLL_EMOJIS.length} options separated by the pipe character (|).`, ephemeral: true });
+      }
+      if (new Set(options.map(option => option.toLowerCase())).size !== options.length) {
+        return interaction.reply({ content: 'Poll options must be unique.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const missingPermissions = [channel, outcomeChannel].some(target => {
+        if (!botMember) return false;
+        const permissions = target.permissionsFor(botMember);
+        return !permissions?.has(PermissionFlagsBits.SendMessages) || !permissions.has(PermissionFlagsBits.EmbedLinks);
+      });
+      if (missingPermissions) {
+        return interaction.reply({ content: 'I need Send Messages and Embed Links permission in both channels.', ephemeral: true });
+      }
+
+      const pollEmbed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(`📊 ${question}`)
+        .setDescription(options.map((option, index) => `${POLL_EMOJIS[index]} **${option}**`).join('\n'))
+        .setFooter({ text: `Poll closes in ${duration} minute${duration === 1 ? '' : 's'} • React with one option` })
+        .setTimestamp();
+      const pollMessage = await channel.send({ embeds: [pollEmbed] });
+      for (let index = 0; index < options.length; index += 1) {
+        await pollMessage.react(POLL_EMOJIS[index]);
+      }
+
+      const pollId = db.createPoll({
+        guildId: interaction.guildId,
+        channelId: channel.id,
+        outcomeChannelId: outcomeChannel.id,
+        messageId: pollMessage.id,
+        question,
+        options,
+        closesAt: Date.now() + duration * 60 * 1000,
+      });
+
+      return interaction.reply({
+        content: `✅ Poll #${pollId} posted in ${channel}. Results will be announced in ${outcomeChannel} after ${duration} minute${duration === 1 ? '' : 's'}.`,
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.commandName === 'schedule-announcement') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('channel', true);
+      if (!channel || !channel.isTextBased() || channel.isThread()) {
+        return interaction.reply({ content: 'Choose a valid text channel for the scheduled announcement.', ephemeral: true });
+      }
+
+      const date = interaction.options.getString('date', true);
+      const time = interaction.options.getString('time', true);
+      const timezone = interaction.options.getString('timezone', true).trim();
+      const kind = interaction.options.getString('type', true);
+      const recurrence = interaction.options.getString('recurrence', true);
+      const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+      const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+
+      if (!dateMatch || !timeMatch) {
+        return interaction.reply({ content: 'Use date `YYYY-MM-DD` and time `HH:MM` (24-hour format).', ephemeral: true });
+      }
+
+      const dateObject = new Date(`${date}T00:00:00Z`);
+      const isValidDate = !Number.isNaN(dateObject.getTime()) && dateObject.toISOString().slice(0, 10) === date;
+      const hour = Number(timeMatch[1]);
+      const minute = Number(timeMatch[2]);
+      if (!isValidDate || hour > 23 || minute > 59) {
+        return interaction.reply({ content: 'Enter a valid calendar date and time.', ephemeral: true });
+      }
+
+      try {
+        getLocalDateTime(timezone);
+      } catch {
+        return interaction.reply({ content: 'Use a valid IANA timezone, for example `Asia/Manila` or `UTC`.', ephemeral: true });
+      }
+
+      const localNow = getLocalDateTime(timezone);
+      if (recurrence === 'once' && date < localNow.date) {
+        return interaction.reply({ content: 'A one-time announcement must use today or a future date.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const canSend = botMember ? channel.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages) : true;
+      const canEmbed = botMember ? channel.permissionsFor(botMember)?.has(PermissionFlagsBits.EmbedLinks) : true;
+      if (!canSend || !canEmbed) {
+        return interaction.reply({
+          content: 'I need permission to send messages and embed links in that channel.',
+          ephemeral: true,
+        });
+      }
+
+      const user = interaction.options.getUser('user');
+      let member = null;
+      if (kind === 'birthday') {
+        if (!user) {
+          return interaction.reply({ content: 'Choose a member when scheduling a birthday celebration.', ephemeral: true });
+        }
+        member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          return interaction.reply({ content: 'That birthday member is not in this server.', ephemeral: true });
+        }
+      }
+
+      const title = normalizeAnnouncementText(interaction.options.getString('title'), 256) || 'Announcement';
+      const subject = normalizeAnnouncementText(interaction.options.getString('subject'), 1024);
+      const message = normalizeAnnouncementText(interaction.options.getString('message'), 2000);
+      if (kind === 'general' && (!subject || !message)) {
+        return interaction.reply({ content: 'General announcements require `title`, `subject`, and `message`.', ephemeral: true });
+      }
+
+      const scheduleId = db.createScheduledAnnouncement({
+        guildId: interaction.guildId,
+        channelId: channel.id,
+        scheduledDate: date,
+        hour,
+        minute,
+        timezone,
+        kind,
+        recurrence,
+        title,
+        subject,
+        message,
+        userId: member?.id,
+      });
+
+      const repeatText = {
+        daily: ' every day',
+        weekly: ' every week',
+        yearly: ' every year',
+      }[recurrence] || '';
+      const targetText = kind === 'birthday' ? ` for ${member}` : '';
+      return interaction.reply({
+        content: `✅ Scheduled ${kind === 'birthday' ? 'a birthday celebration' : 'an announcement'}${targetText} for **${date} at ${time} (${timezone})**${repeatText} in ${channel}. Schedule ID: **${scheduleId}**.`,
         ephemeral: true,
       });
     }
