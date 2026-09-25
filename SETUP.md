@@ -167,7 +167,7 @@ If the member is exempt, or there is no saved role snapshot, the command does no
 | `/schedule-announcement` | Manage Server | Schedule a one-time or yearly general announcement or birthday celebration. Choose the channel, date, time, timezone, type, and recurrence. |
 | `/announcement` | Manage Server | Post an announcement immediately. |
 | `/meetme user` | Manage Server | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
-| `/poll` | Manage Server | Create a two-option poll using 🔴 and 🟢, then announce the result in a separate outcome channel. |
+| `/poll` | Manage Server | Create a two-option poll using 🔴 and 🟢, then announce the result in a separate outcome channel. Duration accepts `s`, `m`, `h`, or `d`. |
 | `/restore-streak users streak` | Manage Server | Restore the same streak value and monthly shields for one or more members. Enter mentions or IDs separated by spaces or commas. |
 | `/streaks` | Anyone | Show the current streak leaderboard. |
 | `/my-streak` | Anyone | Show your current streak and shields privately. |
@@ -194,8 +194,9 @@ bot's highest role must be above the MeetMe role, and it needs Manage Roles perm
 ### Create a poll
 
 Use `/poll` with a question, a duration in minutes, a poll channel, and an outcome
-channel. Enter exactly two options separated by `|`, for example `No | Yes`. The bot
-adds 🔴 to the first option and 🟢 to the second, counts non-bot votes when the duration ends, and announces the
+channel. Enter exactly two options separated by `|`, for example `No | Yes`, and a
+duration such as `30s`, `5m`, `1h`, or `1d` (maximum `7d`). The bot adds 🔴 to the first
+option and 🟢 to the second, counts non-bot votes when the duration ends, and announces the
 winner, tie, or no-vote result in the outcome channel. Polls are stored in SQLite and
 continue after a bot restart.
 

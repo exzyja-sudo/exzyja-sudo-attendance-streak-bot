@@ -108,8 +108,8 @@ const commands = [
       opt.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(256))
     .addStringOption(opt =>
       opt.setName('options').setDescription('Two options separated with |, for example No | Yes').setRequired(true).setMaxLength(400))
-    .addIntegerOption(opt =>
-      opt.setName('duration').setDescription('How many minutes the poll stays open').setRequired(true).setMinValue(1).setMaxValue(10080))
+    .addStringOption(opt =>
+      opt.setName('duration').setDescription('Duration such as 30s, 5m, 1h, or 1d (maximum 7d)').setRequired(true).setMaxLength(8))
     .toJSON(),
 
   new SlashCommandBuilder()

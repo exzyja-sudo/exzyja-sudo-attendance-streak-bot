@@ -70,6 +70,16 @@ function normalizeAnnouncementText(value, maxLength = Infinity) {
   return normalized.slice(0, maxLength);
 }
 
+function parsePollDuration(value) {
+  const match = /^([1-9]\d*)([smhd])$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const multipliers = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+  const durationMs = Number(match[1]) * multipliers[match[2].toLowerCase()];
+  return Number.isSafeInteger(durationMs) && durationMs <= 7 * 24 * 60 * 60 * 1000
+    ? durationMs
+    : null;
+}
+
 async function discordRequest(endpoint, options = {}) {
   const response = await fetch(`https://discord.com/api/v10${endpoint}`, options);
   const responseText = await response.text();
@@ -303,6 +313,7 @@ const client = new Client({
 const scheduledTasks = new Map();
 const attendanceRefreshQueues = new Map();
 let scheduledAnnouncementTask;
+let pollTask;
 
 function parseExemptionRoleIds(value) {
   if (!value) return [];
@@ -681,9 +692,11 @@ client.once(Events.ClientReady, async () => {
   scheduledAnnouncementTask = cron.schedule('* * * * *', () => {
     Promise.all([
       processScheduledAnnouncements(),
-      processDuePolls(),
       processDueMeetmeAssignments(),
     ]).catch(err => console.error('[scheduler] Failed to process scheduled work:', err));
+  }, { timezone: 'UTC' });
+  pollTask = cron.schedule('* * * * * *', () => {
+    processDuePolls().catch(err => console.error('[poll] Failed to process due polls:', err));
   }, { timezone: 'UTC' });
   await processScheduledAnnouncements();
   await processDuePolls();
@@ -861,7 +874,11 @@ client.on(Events.InteractionCreate, async interaction => {
         .split('|')
         .map(option => normalizeAnnouncementText(option, 200))
         .filter(Boolean);
-      const duration = interaction.options.getInteger('duration', true);
+      const durationText = interaction.options.getString('duration', true).trim().toLowerCase();
+      const durationMs = parsePollDuration(durationText);
+      if (!durationMs) {
+        return interaction.reply({ content: 'Use a duration like `30s`, `5m`, `1h`, or `1d` (maximum `7d`).', ephemeral: true });
+      }
       if (options.length !== POLL_EMOJIS.length) {
         return interaction.reply({ content: 'Provide exactly 2 options separated by the pipe character (|). The first uses 🔴 and the second uses 🟢.', ephemeral: true });
       }
@@ -883,7 +900,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setColor(0x5865f2)
         .setTitle(`📊 ${question}`)
         .setDescription(options.map((option, index) => `${POLL_EMOJIS[index]} **${option}**`).join('\n'))
-        .setFooter({ text: `Poll closes in ${duration} minute${duration === 1 ? '' : 's'} • React with one option` })
+        .setFooter({ text: `Poll closes in ${durationText} • React with one option` })
         .setTimestamp();
       const pollMessage = await channel.send({ embeds: [pollEmbed] });
       for (let index = 0; index < options.length; index += 1) {
@@ -897,11 +914,11 @@ client.on(Events.InteractionCreate, async interaction => {
         messageId: pollMessage.id,
         question,
         options,
-        closesAt: Date.now() + duration * 60 * 1000,
+        closesAt: Date.now() + durationMs,
       });
 
       return interaction.reply({
-        content: `✅ Poll #${pollId} posted in ${channel}. Results will be announced in ${outcomeChannel} after ${duration} minute${duration === 1 ? '' : 's'}.`,
+        content: `✅ Poll #${pollId} posted in ${channel}. Results will be announced in ${outcomeChannel} after ${durationText}.`,
         ephemeral: true,
       });
     }
