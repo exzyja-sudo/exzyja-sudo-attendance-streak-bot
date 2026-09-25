@@ -914,14 +914,14 @@ client.on(Events.InteractionCreate, async interaction => {
       if (missingPermissions) {
         return interaction.reply({ content: 'I need Send Messages and Embed Links permission in both channels.', ephemeral: true });
       }
-      if (!botMember?.permissions.has(PermissionFlagsBits.ManageChannels)) {
-        return interaction.reply({ content: 'I need Manage Channels permission to control poll visibility.', ephemeral: true });
+      if (!botMember || !channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply({ content: 'I need Manage Permissions (Manage Roles) in the poll channel to control poll visibility.', ephemeral: true });
       }
       try {
         await channel.permissionOverwrites.edit(accessRole.id, { ViewChannel: true });
       } catch (err) {
         console.error('[poll] Failed to enable poll channel access:', err.message);
-        return interaction.reply({ content: 'I could not enable the access role for the poll channel.', ephemeral: true });
+        return interaction.reply({ content: 'I could not update poll channel permissions. Check that I have Manage Permissions (Manage Roles) there and that the access role is below my highest role.', ephemeral: true });
       }
 
       const pollEmbed = new EmbedBuilder()
