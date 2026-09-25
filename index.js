@@ -955,6 +955,10 @@ client.on(Events.InteractionCreate, async interaction => {
         options,
         closesAt: Date.now() + durationMs,
       });
+      pollEmbed.setFooter({ text: `Poll #${pollId} • closes in ${durationText} • React with one option` });
+      await pollMessage.edit({ embeds: [pollEmbed] }).catch(err =>
+        console.error(`[poll] Failed to add poll ID ${pollId} to the poll message:`, err.message)
+      );
 
       return interaction.reply({
         content: `✅ Poll #${pollId} posted in ${channel}. Results will be announced in ${outcomeChannel} after ${durationText}.`,
