@@ -162,11 +162,12 @@ If the member is exempt, or there is no saved role snapshot, the command does no
 
 | Command | Who can use it | Purpose |
 |---|---|---|
-| `/setup-attendance` | Manage Server | Set the attendance channel, time, timezone, and optional role automation. |
+| `/setup-attendance` | Manage Server | Set the attendance channel, time, timezone, optional role automation, announcement channel, and MeetMe role. |
 | `/post-attendance-now` | Anyone with command access | Post an attendance message immediately for testing. |
 | `/schedule-announcement` | Manage Server | Schedule a one-time or yearly general announcement or birthday celebration. Choose the channel, date, time, timezone, type, and recurrence. |
 | `/announcement` | Manage Server | Post an announcement immediately. |
-| `/poll` | Manage Server | Create a reaction poll with 2-10 options and announce the result in a separate outcome channel. |
+| `/meetme user` | Manage Server | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
+| `/poll` | Manage Server | Create a two-option poll using 🔴 and 🟢, then announce the result in a separate outcome channel. |
 | `/restore-streak users streak` | Manage Server | Restore the same streak value and monthly shields for one or more members. Enter mentions or IDs separated by spaces or commas. |
 | `/streaks` | Anyone | Show the current streak leaderboard. |
 | `/my-streak` | Anyone | Show your current streak and shields privately. |
@@ -182,11 +183,19 @@ require the member and automatically use the birthday greeting. The selected cha
 and timezone are stored with the schedule, and the bot checks for due schedules every
 minute after startup.
 
+### MeetMe role assignment
+
+In `/setup-attendance`, choose both an `announcement-channel` and a `meetme-role`.
+Then use `/meetme user:@Member`. The bot assigns the configured role and posts a
+green MeetMe assignment notice in the announcement channel. The role grants Meeting
+room access for 20 minutes, then the bot removes it and posts an expiry notice. The
+bot's highest role must be above the MeetMe role, and it needs Manage Roles permission.
+
 ### Create a poll
 
 Use `/poll` with a question, a duration in minutes, a poll channel, and an outcome
-channel. Enter options separated by `|`, for example `Yes | No | Maybe`. The bot adds
-numbered reactions, counts non-bot votes when the duration ends, and announces the
+channel. Enter exactly two options separated by `|`, for example `No | Yes`. The bot
+adds 🔴 to the first option and 🟢 to the second, counts non-bot votes when the duration ends, and announces the
 winner, tie, or no-vote result in the outcome channel. Polls are stored in SQLite and
 continue after a bot restart.
 

@@ -23,6 +23,8 @@ const commands = [
       opt.setName('active-role').setDescription('Optional fallback active role to re-add when a member checks in again').setRequired(false))
     .addRoleOption(opt =>
       opt.setName('inactive-role').setDescription('Role to add when the streak reaches zero').setRequired(false))
+    .addRoleOption(opt =>
+      opt.setName('meetme-role').setDescription('Role assigned by /meetme').setRequired(false))
     .addStringOption(opt =>
       opt.setName('exemption-roles').setDescription('Role IDs or mentions, separated by commas or spaces').setRequired(false))
     .toJSON(),
@@ -105,7 +107,7 @@ const commands = [
     .addStringOption(opt =>
       opt.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(256))
     .addStringOption(opt =>
-      opt.setName('options').setDescription('Options separated with |, for example Yes | No').setRequired(true).setMaxLength(1000))
+      opt.setName('options').setDescription('Two options separated with |, for example No | Yes').setRequired(true).setMaxLength(400))
     .addIntegerOption(opt =>
       opt.setName('duration').setDescription('How many minutes the poll stays open').setRequired(true).setMinValue(1).setMaxValue(10080))
     .toJSON(),
@@ -139,6 +141,13 @@ const commands = [
     .setDescription('Post a birthday greeting in the announcement channel')
     .addUserOption(opt =>
       opt.setName('user').setDescription('Member to greet for their birthday').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('meetme')
+    .setDescription('Assign the configured MeetMe role and announce it')
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member to receive the MeetMe role').setRequired(true))
     .toJSON(),
 
   new SlashCommandBuilder()

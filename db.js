@@ -108,6 +108,15 @@ db.exec(`
     closes_at INTEGER NOT NULL,
     closed_at INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS meetme_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    removed_at INTEGER
+  );
 `);
 
 // ---- lightweight migration: add shield columns to older DBs without them ----
@@ -131,6 +140,7 @@ ensureColumn('config', 'announcement_channel_id', 'TEXT');
 ensureColumn('config', 'active_role_id', 'TEXT');
 ensureColumn('config', 'inactive_role_id', 'TEXT');
 ensureColumn('config', 'exemption_role_id', 'TEXT');
+ensureColumn('config', 'meetme_role_id', 'TEXT');
 ensureColumn('config', 'role_automation_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'absence_days', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'last_absence_date', 'TEXT');
@@ -143,10 +153,10 @@ db.prepare(`
 const MAX_SHIELDS = 3;
 
 // ---- config ----
-function setConfig(guildId, { channelId, hour, minute, timezone, title, body, announcementChannelId, configuredDate, activeRoleId, inactiveRoleId, exemptionRoleId, roleAutomationEnabled }) {
+function setConfig(guildId, { channelId, hour, minute, timezone, title, body, announcementChannelId, configuredDate, activeRoleId, inactiveRoleId, exemptionRoleId, meetmeRoleId, roleAutomationEnabled }) {
   db.prepare(`
-    INSERT INTO config (guild_id, channel_id, hour, minute, timezone, title, body, announcement_channel_id, configured_date, active_role_id, inactive_role_id, exemption_role_id, role_automation_enabled)
-    VALUES (@guildId, @channelId, @hour, @minute, @timezone, @title, @body, @announcementChannelId, @configuredDate, @activeRoleId, @inactiveRoleId, @exemptionRoleId, @roleAutomationEnabled)
+    INSERT INTO config (guild_id, channel_id, hour, minute, timezone, title, body, announcement_channel_id, configured_date, active_role_id, inactive_role_id, exemption_role_id, meetme_role_id, role_automation_enabled)
+    VALUES (@guildId, @channelId, @hour, @minute, @timezone, @title, @body, @announcementChannelId, @configuredDate, @activeRoleId, @inactiveRoleId, @exemptionRoleId, @meetmeRoleId, @roleAutomationEnabled)
     ON CONFLICT(guild_id) DO UPDATE SET
       channel_id = excluded.channel_id,
       hour = excluded.hour,
@@ -159,8 +169,9 @@ function setConfig(guildId, { channelId, hour, minute, timezone, title, body, an
         active_role_id = excluded.active_role_id,
         inactive_role_id = excluded.inactive_role_id,
         exemption_role_id = excluded.exemption_role_id,
+        meetme_role_id = excluded.meetme_role_id,
         role_automation_enabled = excluded.role_automation_enabled
-        `).run({ guildId, channelId, hour, minute, timezone, title, body, announcementChannelId, configuredDate, activeRoleId, inactiveRoleId, exemptionRoleId, roleAutomationEnabled });
+        `).run({ guildId, channelId, hour, minute, timezone, title, body, announcementChannelId, configuredDate, activeRoleId, inactiveRoleId, exemptionRoleId, meetmeRoleId, roleAutomationEnabled });
 }
 
 function getConfig(guildId) {
@@ -206,6 +217,35 @@ function getDuePolls(now = Date.now()) {
 
 function markPollClosed(id, closedAt = Date.now()) {
   db.prepare('UPDATE polls SET closed_at = ? WHERE id = ?').run(closedAt, id);
+}
+
+function createMeetmeAssignment({ guildId, userId, roleId, expiresAt }) {
+  db.prepare(`
+    UPDATE meetme_assignments
+    SET role_id = ?, expires_at = ?, removed_at = NULL
+    WHERE guild_id = ? AND user_id = ? AND removed_at IS NULL
+  `).run(roleId, expiresAt, guildId, userId);
+  const active = db.prepare('SELECT id FROM meetme_assignments WHERE guild_id = ? AND user_id = ? AND removed_at IS NULL')
+    .get(guildId, userId);
+  if (active) return active.id;
+
+  const result = db.prepare(`
+    INSERT INTO meetme_assignments (guild_id, user_id, role_id, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(guildId, userId, roleId, expiresAt);
+  return result.lastInsertRowid;
+}
+
+function getDueMeetmeAssignments(now = Date.now()) {
+  return db.prepare(`
+    SELECT * FROM meetme_assignments
+    WHERE removed_at IS NULL AND expires_at <= ?
+    ORDER BY expires_at, id
+  `).all(now);
+}
+
+function markMeetmeAssignmentRemoved(id, removedAt = Date.now()) {
+  db.prepare('UPDATE meetme_assignments SET removed_at = ? WHERE id = ?').run(removedAt, id);
 }
 
 // ---- active message tracking (so we know which message is "today's" post) ----
@@ -432,6 +472,9 @@ module.exports = {
   createPoll,
   getDuePolls,
   markPollClosed,
+  createMeetmeAssignment,
+  getDueMeetmeAssignments,
+  markMeetmeAssignmentRemoved,
   setActiveMessage,
   getActiveMessage,
   recordCheckin,

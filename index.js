@@ -286,7 +286,8 @@ const db = require('./db');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
 
-const POLL_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+const POLL_EMOJIS = ['🔴', '🟢'];
+const MEETME_DURATION_MS = 20 * 60 * 1000;
 
 const client = new Client({
   intents: [
@@ -502,6 +503,38 @@ async function processDuePolls() {
   }
 }
 
+async function processDueMeetmeAssignments() {
+  for (const assignment of db.getDueMeetmeAssignments()) {
+    try {
+      const guild = client.guilds.cache.get(assignment.guild_id);
+      const member = guild ? await guild.members.fetch(assignment.user_id).catch(() => null) : null;
+      const role = guild ? await guild.roles.fetch(assignment.role_id).catch(() => null) : null;
+      if (member && role && member.roles.cache.has(role.id)) {
+        await member.roles.remove(role);
+      }
+
+      const config = db.getConfig(assignment.guild_id);
+      const channel = config?.announcement_channel_id
+        ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
+        : null;
+      if (channel?.isTextBased() && member) {
+        const notice = new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle('🚪 Meeting Room Access Ended')
+          .setDescription(`${member} has been removed from the Meeting room after 20 minutes.`)
+          .setFooter({ text: 'MeetMe access expired' })
+          .setTimestamp();
+        await channel.send({ embeds: [notice] }).catch(err =>
+          console.error(`[meetme] Failed to announce expiry for ${assignment.user_id}:`, err.message)
+        );
+      }
+      db.markMeetmeAssignmentRemoved(assignment.id);
+    } catch (err) {
+      console.error(`[meetme] Failed to expire assignment ${assignment.id}:`, err);
+    }
+  }
+}
+
 // Re-renders the "Checked in (N)" list on today's attendance post to reflect
 // current reactions — including each person's fire streak + shields left,
 // so nobody needs to run /my-streak just to see it. Called after every add/remove.
@@ -649,10 +682,12 @@ client.once(Events.ClientReady, async () => {
     Promise.all([
       processScheduledAnnouncements(),
       processDuePolls(),
+      processDueMeetmeAssignments(),
     ]).catch(err => console.error('[scheduler] Failed to process scheduled work:', err));
   }, { timezone: 'UTC' });
   await processScheduledAnnouncements();
   await processDuePolls();
+  await processDueMeetmeAssignments();
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -673,6 +708,8 @@ client.on(Events.InteractionCreate, async interaction => {
       const roleAutomationEnabled = interaction.options.getBoolean('enable-role-automation') || false;
       const activeRole = interaction.options.getRole('active-role');
       const inactiveRole = interaction.options.getRole('inactive-role');
+      const configuredMeetmeRole = db.getConfig(interaction.guildId)?.meetme_role_id;
+      const meetmeRole = interaction.options.getRole('meetme-role') || (configuredMeetmeRole ? interaction.guild.roles.cache.get(configuredMeetmeRole) : null);
       const exemptionRoleIds = parseExemptionRoleIds(interaction.options.getString('exemption-roles'));
 
       if (!channel.isTextBased() || channel.isThread()) {
@@ -706,6 +743,9 @@ client.on(Events.InteractionCreate, async interaction => {
       if (activeRole && inactiveRole && activeRole.id === inactiveRole.id) {
         return interaction.reply({ content: 'The active and inactive roles must be different.', ephemeral: true });
       }
+      if (meetmeRole?.managed || meetmeRole?.id === interaction.guild.id) {
+        return interaction.reply({ content: 'Choose a normal, assignable role for `meetme-role`.', ephemeral: true });
+      }
 
       const match = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
       if (!match) {
@@ -730,6 +770,7 @@ client.on(Events.InteractionCreate, async interaction => {
         activeRoleId: activeRole?.id || null,
         inactiveRoleId: inactiveRole?.id || null,
         exemptionRoleId: exemptionRoleIds.join(',') || null,
+        meetmeRoleId: meetmeRole?.id || null,
         roleAutomationEnabled: roleAutomationEnabled ? 1 : 0,
       };
       db.setConfig(interaction.guildId, config);
@@ -821,8 +862,8 @@ client.on(Events.InteractionCreate, async interaction => {
         .map(option => normalizeAnnouncementText(option, 200))
         .filter(Boolean);
       const duration = interaction.options.getInteger('duration', true);
-      if (options.length < 2 || options.length > POLL_EMOJIS.length) {
-        return interaction.reply({ content: `Provide between 2 and ${POLL_EMOJIS.length} options separated by the pipe character (|).`, ephemeral: true });
+      if (options.length !== POLL_EMOJIS.length) {
+        return interaction.reply({ content: 'Provide exactly 2 options separated by the pipe character (|). The first uses 🔴 and the second uses 🟢.', ephemeral: true });
       }
       if (new Set(options.map(option => option.toLowerCase())).size !== options.length) {
         return interaction.reply({ content: 'Poll options must be unique.', ephemeral: true });
@@ -1099,6 +1140,68 @@ client.on(Events.InteractionCreate, async interaction => {
       );
 
       return interaction.reply({ content: `✅ Birthday greetings announced for ${member}.`, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'meetme') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const config = db.getConfig(interaction.guildId);
+      if (!config?.meetme_role_id) {
+        return interaction.reply({ content: 'Configure a `meetme-role` first with `/setup-attendance`.', ephemeral: true });
+      }
+      if (!config.announcement_channel_id) {
+        return interaction.reply({ content: 'Configure an `announcement-channel` first with `/setup-attendance`.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      const meetmeRole = interaction.guild.roles.cache.get(config.meetme_role_id)
+        || await interaction.guild.roles.fetch(config.meetme_role_id).catch(() => null);
+      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      if (!member) {
+        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
+      }
+      if (!meetmeRole || meetmeRole.managed || meetmeRole.id === interaction.guild.id) {
+        return interaction.reply({ content: 'The configured MeetMe role could not be found or cannot be assigned.', ephemeral: true });
+      }
+      if (!announcementChannel?.isTextBased()) {
+        return interaction.reply({ content: 'The configured announcement channel could not be found.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply({ content: 'I need the Manage Roles permission to assign the MeetMe role.', ephemeral: true });
+      }
+      if (meetmeRole.position >= botMember.roles.highest.position) {
+        return interaction.reply({ content: `Move my highest role above ${meetmeRole} before using /meetme.`, ephemeral: true });
+      }
+      const canAnnounce = announcementChannel.permissionsFor(botMember);
+      if (!canAnnounce?.has(PermissionFlagsBits.SendMessages) || !canAnnounce.has(PermissionFlagsBits.EmbedLinks)) {
+        return interaction.reply({ content: 'I need Send Messages and Embed Links permission in the announcement channel.', ephemeral: true });
+      }
+      if (member.roles.cache.has(meetmeRole.id)) {
+        return interaction.reply({ content: `${member} already has ${meetmeRole}.`, ephemeral: true });
+      }
+
+      await member.roles.add(meetmeRole);
+      const expiresAt = Date.now() + MEETME_DURATION_MS;
+      db.createMeetmeAssignment({
+        guildId: interaction.guildId,
+        userId: member.id,
+        roleId: meetmeRole.id,
+        expiresAt,
+      });
+      const notice = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('📣 Called to the Meeting Room')
+        .setDescription(`${member} has been called to the Meeting room and given ${meetmeRole}. Access will end after 20 minutes.`)
+        .setFooter({ text: 'MeetMe assignment' })
+        .setTimestamp();
+      await announcementChannel.send({ embeds: [notice] });
+
+      return interaction.reply({ content: `✅ Assigned ${meetmeRole} to ${member} and announced it in ${announcementChannel}.`, ephemeral: true });
     }
 
     if (interaction.commandName === 'forgive-inactive') {

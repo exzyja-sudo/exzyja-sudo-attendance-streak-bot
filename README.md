@@ -188,10 +188,11 @@ otherwise the bot effectively goes offline between visits.
 
 | Command | Who | Description |
 |---|---|---|
-| `/setup-attendance channel [announcement-channel] time [timezone] [title] [message] [enable-role-automation] [active-role] [inactive-role] [exemption-roles]` | Manage Server perm | Configure the daily post, optional inactive-member announcements, and role automation. When a streak reaches zero, `active-role` is removed and `inactive-role` is added. Members with any configured `exemption-roles` are skipped. |
+| `/setup-attendance channel [announcement-channel] time [timezone] [title] [message] [enable-role-automation] [active-role] [inactive-role] [meetme-role] [exemption-roles]` | Manage Server perm | Configure the daily post, optional inactive-member announcements, role automation, and the role used by `/meetme`. |
 | `/schedule-announcement channel date time timezone type recurrence [user] [title] [subject] [message]` | Manage Server perm | Schedule a one-time or yearly general announcement or birthday celebration. |
 | `/announcement channel title subject message` | Manage Server perm | Post an announcement immediately. |
-| `/poll channel outcome-channel question options duration` | Manage Server perm | Post a reaction poll and announce its result in the selected outcome channel. Separate options with `|`. |
+| `/meetme user` | Manage Server perm | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
+| `/poll channel outcome-channel question options duration` | Manage Server perm | Post a two-option poll using 🔴 and 🟢, then announce its result in the selected outcome channel. |
 | `/forgive-inactive user` | Manage Server perm | Remove the inactive role and restore the member's roles from before the inactive transition. |
 | `/post-attendance-now` | Anyone with access | Posts today's attendance message immediately (good for testing). |
 | `/restore-streak users streak` | Manage Server perm | Restores the same streak value and monthly shields for one or more members. Separate mentions or IDs with spaces or commas. |
@@ -205,8 +206,8 @@ use `type: Birthday celebration`, choose the member in `user`, and select the ce
 date. Birthday schedules can repeat every year. The channel and timezone are chosen for
 each schedule, and scheduled announcements are stored in SQLite so they survive restarts.
 
-To create a poll, use `/poll` with options such as `Yes | No | Maybe` and a duration in
-minutes. The bot adds numbered reactions, closes the poll when the duration ends, counts
+To create a poll, use `/poll` with exactly two options such as `No | Yes` and a duration in
+minutes. The bot adds 🔴 to the first option and 🟢 to the second, closes the poll when the duration ends, counts
 non-bot votes, and posts the winner or tie in the outcome channel.
 
 ## Notes
