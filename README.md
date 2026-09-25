@@ -191,6 +191,7 @@ otherwise the bot effectively goes offline between visits.
 | `/setup-attendance channel [announcement-channel] time [timezone] [title] [message] [enable-role-automation] [active-role] [inactive-role] [exemption-roles]` | Manage Server perm | Configure the daily post, optional inactive-member announcements, and role automation. When a streak reaches zero, `active-role` is removed and `inactive-role` is added. Members with any configured `exemption-roles` are skipped. |
 | `/forgive-inactive user` | Manage Server perm | Remove the inactive role and restore the member's roles from before the inactive transition. |
 | `/post-attendance-now` | Anyone with access | Posts today's attendance message immediately (good for testing). |
+| `/restore-streak users streak` | Manage Server perm | Restores the same streak value and monthly shields for one or more members. Separate mentions or IDs with spaces or commas. |
 | `/streaks` | Anyone | Leaderboard embed of everyone's current streak. |
 | `/my-streak` | Anyone | Private reply with your own current/best streak. |
 

@@ -77,11 +77,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('restore-streak')
-    .setDescription('Manually restore a member\'s streak and shields')
-    .addUserOption(opt =>
-      opt.setName('user').setDescription('Member whose streak should be restored').setRequired(true))
+    .setDescription('Manually restore multiple members\' streaks and shields')
+    .addStringOption(opt =>
+      opt.setName('users').setDescription('Members to restore, separated by spaces or commas').setRequired(true).setMaxLength(1000))
     .addIntegerOption(opt =>
-      opt.setName('streak').setDescription('Streak value to set for the member').setRequired(true).setMinValue(0))
+      opt.setName('streak').setDescription('Streak value to set for every member').setRequired(true).setMinValue(0))
     .toJSON(),
 
   new SlashCommandBuilder()

@@ -164,6 +164,7 @@ If the member is exempt, or there is no saved role snapshot, the command does no
 |---|---|---|
 | `/setup-attendance` | Manage Server | Set the attendance channel, time, timezone, and optional role automation. |
 | `/post-attendance-now` | Anyone with command access | Post an attendance message immediately for testing. |
+| `/restore-streak users streak` | Manage Server | Restore the same streak value and monthly shields for one or more members. Enter mentions or IDs separated by spaces or commas. |
 | `/streaks` | Anyone | Show the current streak leaderboard. |
 | `/my-streak` | Anyone | Show your current streak and shields privately. |
 | `/forgive-inactive user` | Manage Server | Restore a member's saved roles and remove the inactive role. |

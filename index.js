@@ -662,14 +662,33 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
-      const user = interaction.options.getUser('user', true);
+      const usersInput = interaction.options.getString('users', true);
       const streak = interaction.options.getInteger('streak', true);
-      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      if (!member) {
-        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
+      const userIds = [...new Set(
+        usersInput
+          .split(/[\s,]+/)
+          .map(value => value.match(/^<@!?([0-9]+)>$/)?.[1] || (value.match(/^[0-9]+$/) ? value : null))
+          .filter(Boolean)
+      )];
+      if (!userIds.length) {
+        return interaction.reply({ content: 'Provide one or more member mentions or user IDs.', ephemeral: true });
       }
 
-      const result = db.restoreStreak(interaction.guildId, user.id, streak);
+      const members = [];
+      const missingUserIds = [];
+      for (const userId of userIds) {
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        if (member) members.push(member);
+        else missingUserIds.push(userId);
+      }
+      if (!members.length) {
+        return interaction.reply({ content: 'None of those members are in this server.', ephemeral: true });
+      }
+
+      const restored = members.map(member => ({
+        member,
+        result: db.restoreStreak(interaction.guildId, member.id, streak),
+      }));
       const config = db.getConfig(interaction.guildId);
       const announcementChannel = config?.announcement_channel_id
         ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
@@ -678,23 +697,27 @@ client.on(Events.InteractionCreate, async interaction => {
       if (announcementChannel?.isTextBased()) {
         const notice = new EmbedBuilder()
           .setColor(0xf1c40f)
-          .setTitle('🔥 STREAK RESTORED!')
+          .setTitle('🔥 STREAKS RESTORED!')
           .setDescription([
-            `${member}’s streak has been **successfully restored**!`,
+            ...restored.map(({ member }) => `${member}’s streak has been **successfully restored**!`),
             '',
-            'Keep the streak alive and don’t let the fire go out! 🔥',
+            `Each streak was restored to **${streak}** and shields were refreshed.`,
           ].join('\n'))
           .setTimestamp();
 
         await announcementChannel.send({ embeds: [notice] }).catch(err =>
-          console.error(`[announcement] Failed to notify restored member ${member.id}:`, err.message)
+          console.error('[announcement] Failed to notify restored members:', err.message)
         );
       }
 
       await refreshActiveAttendanceEmbed(interaction.guildId, config);
 
+      const restoredNames = restored.map(({ member }) => member.toString()).join(', ');
+      const missingMessage = missingUserIds.length
+        ? ` Skipped ${missingUserIds.length} member${missingUserIds.length === 1 ? '' : 's'} not found in this server.`
+        : '';
       return interaction.reply({
-        content: `✅ Restored ${member}'s streak to **${result.current_streak}** and refreshed their shields for this month.`,
+        content: `✅ Restored **${streak}** days for ${restoredNames} and refreshed their shields for this month.${missingMessage}`,
         ephemeral: true,
       });
     }
