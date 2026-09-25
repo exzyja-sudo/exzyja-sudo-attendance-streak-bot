@@ -217,6 +217,13 @@ function getDuePolls(now = Date.now()) {
   `).all(now);
 }
 
+function getOpenPoll(guildId, pollId) {
+  return db.prepare(`
+    SELECT * FROM polls
+    WHERE guild_id = ? AND id = ? AND closed_at IS NULL
+  `).get(guildId, pollId);
+}
+
 function markPollClosed(id, closedAt = Date.now()) {
   db.prepare('UPDATE polls SET closed_at = ? WHERE id = ?').run(closedAt, id);
 }
@@ -481,6 +488,7 @@ module.exports = {
   markScheduledAnnouncementSent,
   createPoll,
   getDuePolls,
+  getOpenPoll,
   markPollClosed,
   hasActivePollForAccess,
   createMeetmeAssignment,

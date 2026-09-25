@@ -193,6 +193,7 @@ otherwise the bot effectively goes offline between visits.
 | `/announcement channel title subject message` | Manage Server perm | Post an announcement immediately. |
 | `/meetme user` | Manage Server perm | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
 | `/poll channel outcome-channel access-role question options duration` | Manage Server perm | Open the poll channel to the access role, use 🟢 then 🔴, and announce the result before hiding the channel again. |
+| `/close-poll poll-id` | Manage Server perm | Close an active poll immediately, announce its current result, and hide the poll channel from its access role. |
 | `/forgive-inactive user` | Manage Server perm | Remove the inactive role and restore the member's roles from before the inactive transition. |
 | `/post-attendance-now` | Anyone with access | Posts today's attendance message immediately (good for testing). |
 | `/restore-streak users streak` | Manage Server perm | Restores the same streak value and monthly shields for one or more members. Separate mentions or IDs with spaces or commas. |
@@ -209,6 +210,8 @@ each schedule, and scheduled announcements are stored in SQLite so they survive 
 To create a poll, use `/poll` with exactly two options such as `No | Yes` and a duration
 such as `30s`, `5m`, `1h`, or `1d` (maximum `7d`). The bot adds 🟢 to the first option and 🔴 to the second, opens the poll channel to the selected access role, closes the poll when the duration ends, counts
 non-bot votes, and posts the winner or tie in the outcome channel.
+The command replies with the poll ID. Use `/close-poll poll-id` to end it early;
+the bot announces the votes collected so far and closes access immediately.
 
 ## Notes
 

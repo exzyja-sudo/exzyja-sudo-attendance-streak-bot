@@ -115,6 +115,13 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('close-poll')
+    .setDescription('Close an active poll now and announce its current result')
+    .addIntegerOption(opt =>
+      opt.setName('poll-id').setDescription('ID of the active poll to close').setRequired(true).setMinValue(1))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('post-attendance-now')
     .setDescription('Manually post today\'s attendance message right now')
     .toJSON(),

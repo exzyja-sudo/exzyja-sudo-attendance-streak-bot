@@ -168,6 +168,7 @@ If the member is exempt, or there is no saved role snapshot, the command does no
 | `/announcement` | Manage Server | Post an announcement immediately. |
 | `/meetme user` | Manage Server | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
 | `/poll` | Manage Server | Open the poll channel to a selected access role, create a two-option poll using 🟢 and 🔴, then announce the result and hide the channel when it ends. |
+| `/close-poll poll-id` | Manage Server | Close an active poll early, announce its current tally, and hide the poll channel from its access role. |
 | `/restore-streak users streak` | Manage Server | Restore the same streak value and monthly shields for one or more members. Enter mentions or IDs separated by spaces or commas. |
 | `/streaks` | Anyone | Show the current streak leaderboard. |
 | `/my-streak` | Anyone | Show your current streak and shields privately. |
@@ -200,6 +201,8 @@ separated by `|`, for example `No | Yes`, and a duration such as `30s`, `5m`, `1
 non-bot votes when the duration ends, announces the winner, tie, or no-vote result in
 the outcome channel, then hides the poll channel from the access role. Polls are stored in SQLite and
 continue after a bot restart.
+The bot replies with the poll ID when it creates a poll. A moderator can run
+`/close-poll poll-id` to announce the current tally and close it before its timer expires.
 
 ## Disable role automation
 

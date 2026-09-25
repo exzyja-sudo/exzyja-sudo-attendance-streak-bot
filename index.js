@@ -962,6 +962,26 @@ client.on(Events.InteractionCreate, async interaction => {
       });
     }
 
+    if (interaction.commandName === 'close-poll') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const pollId = interaction.options.getInteger('poll-id', true);
+      const poll = db.getOpenPoll(interaction.guildId, pollId);
+      if (!poll) {
+        return interaction.reply({ content: `Poll #${pollId} is not active in this server.`, ephemeral: true });
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+      const closed = await closePoll(poll);
+      return interaction.editReply({
+        content: closed
+          ? `✅ Poll #${pollId} closed and its current results were announced.`
+          : `I couldn't close poll #${pollId}. Check that I can access the poll and outcome channels, then review the bot logs.`,
+      });
+    }
+
     if (interaction.commandName === 'schedule-announcement') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
