@@ -102,6 +102,7 @@ db.exec(`
     guild_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     outcome_channel_id TEXT NOT NULL,
+    access_role_id TEXT,
     message_id TEXT NOT NULL,
     question TEXT NOT NULL,
     options TEXT NOT NULL,
@@ -144,6 +145,7 @@ ensureColumn('config', 'meetme_role_id', 'TEXT');
 ensureColumn('config', 'role_automation_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'absence_days', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'last_absence_date', 'TEXT');
+ensureColumn('polls', 'access_role_id', 'TEXT');
 db.prepare(`
   UPDATE config SET role_automation_enabled = 1
   WHERE active_role_id IS NOT NULL AND inactive_role_id IS NOT NULL
@@ -199,11 +201,11 @@ function markScheduledAnnouncementSent(id, dateStr) {
   db.prepare('UPDATE scheduled_announcements SET last_sent_date = ? WHERE id = ?').run(dateStr, id);
 }
 
-function createPoll({ guildId, channelId, outcomeChannelId, messageId, question, options, closesAt }) {
+function createPoll({ guildId, channelId, outcomeChannelId, accessRoleId, messageId, question, options, closesAt }) {
   const result = db.prepare(`
-    INSERT INTO polls (guild_id, channel_id, outcome_channel_id, message_id, question, options, closes_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(guildId, channelId, outcomeChannelId, messageId, question, JSON.stringify(options), closesAt);
+    INSERT INTO polls (guild_id, channel_id, outcome_channel_id, access_role_id, message_id, question, options, closes_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(guildId, channelId, outcomeChannelId, accessRoleId, messageId, question, JSON.stringify(options), closesAt);
   return result.lastInsertRowid;
 }
 
@@ -217,6 +219,14 @@ function getDuePolls(now = Date.now()) {
 
 function markPollClosed(id, closedAt = Date.now()) {
   db.prepare('UPDATE polls SET closed_at = ? WHERE id = ?').run(closedAt, id);
+}
+
+function hasActivePollForAccess(channelId, accessRoleId, excludeId) {
+  return Boolean(db.prepare(`
+    SELECT 1 FROM polls
+    WHERE channel_id = ? AND access_role_id = ? AND closed_at IS NULL AND id != ?
+    LIMIT 1
+  `).get(channelId, accessRoleId, excludeId));
 }
 
 function createMeetmeAssignment({ guildId, userId, roleId, expiresAt }) {
@@ -472,6 +482,7 @@ module.exports = {
   createPoll,
   getDuePolls,
   markPollClosed,
+  hasActivePollForAccess,
   createMeetmeAssignment,
   getDueMeetmeAssignments,
   markMeetmeAssignmentRemoved,

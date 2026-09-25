@@ -104,6 +104,8 @@ const commands = [
       opt.setName('channel').setDescription('Channel where the poll will be posted').setRequired(true))
     .addChannelOption(opt =>
       opt.setName('outcome-channel').setDescription('Channel for the final poll result').setRequired(true))
+    .addRoleOption(opt =>
+      opt.setName('access-role').setDescription('Role allowed to view the poll channel while active').setRequired(true))
     .addStringOption(opt =>
       opt.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(256))
     .addStringOption(opt =>

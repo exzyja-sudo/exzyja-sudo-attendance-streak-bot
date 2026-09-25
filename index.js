@@ -296,7 +296,7 @@ const db = require('./db');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
 
-const POLL_EMOJIS = ['🔴', '🟢'];
+const POLL_EMOJIS = ['🟢', '🔴'];
 const MEETME_DURATION_MS = 20 * 60 * 1000;
 
 const client = new Client({
@@ -470,12 +470,18 @@ async function closePoll(poll) {
   for (let index = 0; index < options.length; index += 1) {
     const reaction = message.reactions.cache.get(POLL_EMOJIS[index]);
     const users = reaction ? await reaction.users.fetch().catch(() => new Map()) : new Map();
-    votes.push([...users.values()].filter(user => !user.bot).length);
+    const voters = [...users.values()].filter(user => !user.bot);
+    votes.push({ count: voters.length, voters: voters.map(user => `<@${user.id}>`) });
   }
 
-  const highestVote = Math.max(...votes, 0);
-  const winners = options.filter((option, index) => votes[index] === highestVote && highestVote > 0);
-  const resultLines = options.map((option, index) => `${POLL_EMOJIS[index]} **${option}** — ${votes[index]} vote${votes[index] === 1 ? '' : 's'}`);
+  const highestVote = Math.max(...votes.map(vote => vote.count), 0);
+  const winners = options.filter((option, index) => votes[index].count === highestVote && highestVote > 0);
+  const resultLines = options.map((option, index) => {
+    const vote = votes[index];
+    const allVoters = vote.voters.length ? vote.voters.join(', ') : 'No voters';
+    const voterText = allVoters.length > 900 ? `${allVoters.slice(0, 897)}...` : allVoters;
+    return `${POLL_EMOJIS[index]} **${option}** — ${vote.count} vote${vote.count === 1 ? '' : 's'}\nVoters: ${voterText}`;
+  });
   const outcome = winners.length
     ? winners.length === 1 ? `🏆 Winner: **${winners[0]}**` : `🤝 Tie: ${winners.map(winner => `**${winner}**`).join(', ')}`
     : 'No votes were recorded.';
@@ -501,6 +507,15 @@ async function closePoll(poll) {
     console.error(`[poll] Failed to close poll message ${poll.id}:`, err.message)
   );
   db.markPollClosed(poll.id);
+
+  if (poll.access_role_id && pollChannel.permissionOverwrites) {
+    const anotherActivePoll = db.hasActivePollForAccess(poll.channel_id, poll.access_role_id, poll.id);
+    if (!anotherActivePoll) {
+      await pollChannel.permissionOverwrites.edit(poll.access_role_id, { ViewChannel: false }).catch(err =>
+        console.error(`[poll] Failed to hide channel for poll ${poll.id}:`, err.message)
+      );
+    }
+  }
   return true;
 }
 
@@ -865,8 +880,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
       const channel = interaction.options.getChannel('channel', true);
       const outcomeChannel = interaction.options.getChannel('outcome-channel', true);
+      const accessRole = interaction.options.getRole('access-role', true);
       if (!channel?.isTextBased() || channel.isThread() || !outcomeChannel?.isTextBased() || outcomeChannel.isThread()) {
         return interaction.reply({ content: 'Choose regular text channels for the poll and its outcome.', ephemeral: true });
+      }
+      if (accessRole.managed || accessRole.id === interaction.guild.id) {
+        return interaction.reply({ content: 'Choose a normal server role for poll channel access.', ephemeral: true });
       }
 
       const question = normalizeAnnouncementText(interaction.options.getString('question', true), 256);
@@ -880,7 +899,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'Use a duration like `30s`, `5m`, `1h`, or `1d` (maximum `7d`).', ephemeral: true });
       }
       if (options.length !== POLL_EMOJIS.length) {
-        return interaction.reply({ content: 'Provide exactly 2 options separated by the pipe character (|). The first uses 🔴 and the second uses 🟢.', ephemeral: true });
+        return interaction.reply({ content: 'Provide exactly 2 options separated by the pipe character (|). The first uses 🟢 and the second uses 🔴.', ephemeral: true });
       }
       if (new Set(options.map(option => option.toLowerCase())).size !== options.length) {
         return interaction.reply({ content: 'Poll options must be unique.', ephemeral: true });
@@ -894,6 +913,15 @@ client.on(Events.InteractionCreate, async interaction => {
       });
       if (missingPermissions) {
         return interaction.reply({ content: 'I need Send Messages and Embed Links permission in both channels.', ephemeral: true });
+      }
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({ content: 'I need Manage Channels permission to control poll visibility.', ephemeral: true });
+      }
+      try {
+        await channel.permissionOverwrites.edit(accessRole.id, { ViewChannel: true });
+      } catch (err) {
+        console.error('[poll] Failed to enable poll channel access:', err.message);
+        return interaction.reply({ content: 'I could not enable the access role for the poll channel.', ephemeral: true });
       }
 
       const pollEmbed = new EmbedBuilder()
@@ -911,6 +939,7 @@ client.on(Events.InteractionCreate, async interaction => {
         guildId: interaction.guildId,
         channelId: channel.id,
         outcomeChannelId: outcomeChannel.id,
+        accessRoleId: accessRole.id,
         messageId: pollMessage.id,
         question,
         options,
