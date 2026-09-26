@@ -1,6 +1,6 @@
 {
   "name": "attendance-streak-bot",
-  "version": "3.0.49",
+  "version": "3.0.50",
   "description": "Discord bot that posts a daily attendance message and tracks reaction streaks per user.",
   "main": "index.js",
   "type": "commonjs",
