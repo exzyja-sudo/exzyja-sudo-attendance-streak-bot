@@ -3,6 +3,11 @@ const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = 
 
 const commands = [
   new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Show the bot commands and feature guide')
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('clear-messages')
     .setDescription('Delete recent messages from a selected channel after confirmation')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)

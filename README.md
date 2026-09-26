@@ -10,6 +10,7 @@ nicknames.
 
 ## How it works
 
+- Use `/help` in Discord for a public guide to all commands and features.
 - You configure a channel + time (+ timezone) once with `/setup-attendance`.
   That time is also the daily "midnight" boundary for streaks and shields.
 - Every day at that time, the bot posts a fresh embed and reacts ✅ to it.
@@ -30,7 +31,7 @@ nicknames.
 - `/meetme user` gives a member the configured MeetMe role for 20 minutes.
   Managers can use `/close-meetme user` to remove the role and end the
   assignment early.
-- Members earn 15–25 chat XP for a message, with a 30-minute per-member
+- Members earn 15–25 chat XP for a message, with a 5-minute per-member
   message cooldown. Another member's reaction adds 3 XP to the message author
   with no cooldown; self-reactions and bot reactions do not count.
   Level 2 takes 100 XP; each later level takes 10 more XP than the

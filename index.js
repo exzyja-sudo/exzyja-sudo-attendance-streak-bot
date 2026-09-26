@@ -783,6 +783,54 @@ client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
+    if (interaction.commandName === 'help') {
+      const helpEmbeds = [
+        new EmbedBuilder()
+          .setColor(0x3498db)
+          .setTitle('Attendance & Streaks')
+          .setDescription([
+            '**`/setup-attendance`** Set the daily post channel, time, and timezone. Managers can also configure role automation.',
+            '**`/post-attendance-now`** Post today’s check-in message immediately.',
+            '**Daily check-in:** React ✅ to the current attendance post. Only that post counts; each successful check-in updates your consecutive-day streak.',
+            '**Shields:** Members get up to 3 per month. A shield covers one missed day, but not two missed days in a row.',
+            '**`/streaks`** Show the server streak leaderboard. **`/my-streak`** privately show your streak and shields.',
+          ].join('\n\n')),
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('Levels')
+          .setDescription([
+            '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Another member reacting to your message adds 3 XP each time; self-reactions and bot reactions do not count.',
+            '**Level requirements:** 100 XP to reach Level 2, then the next level takes 10 more XP than the previous one (110, 120, and so on).',
+            '**`/level`** View your level, or choose a member. **`/level-leaderboard`** Show the top members by XP.',
+            '**`/level-up user levels`** Managers can manually grant levels. The level-up card is posted in the configured channel.',
+            '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
+          ].join('\n\n')),
+        new EmbedBuilder()
+          .setColor(0xf1c40f)
+          .setTitle('Announcements & Polls')
+          .setDescription([
+            '**`/announcement`** Post a titled announcement; members react to confirm they have read it.',
+            '**`/schedule-announcement`** Schedule a general or birthday announcement for a date, time, and timezone. Choose once, daily, weekly, or yearly recurrence.',
+            '**`/birthday user`** Managers post a birthday greeting in the configured announcement channel.',
+            '**`/poll`** Create a two-option reaction poll, set an outcome channel, access role, and duration (up to 7 days). The bot announces the result when it closes.',
+            '**`/close-poll poll-id`** Close an active poll early and announce its current result.',
+          ].join('\n\n')),
+        new EmbedBuilder()
+          .setColor(0xe67e22)
+          .setTitle('Roles & Moderation')
+          .setDescription([
+            '**`/clear-messages channel amount`** Members with Manage Messages can review and confirm deletion of 1–100 recent messages. Messages older than 14 days are excluded.',
+            '**`/restore-streak users streak`** Managers restore streaks for multiple members and refresh their shields.',
+            '**`/meetme user`** Managers assign the configured MeetMe role for 20 minutes. **`/close-meetme user`** ends an active assignment early.',
+            '**`/forgive-inactive user`** Managers remove a member’s inactive role and restore saved roles when available.',
+            '**`/the-judge user`** Managers place a member on inactive hold and announce it.',
+            '**Role automation:** Configure active, inactive, and exemption roles in `/setup-attendance`. Inactive status can remove saved access roles; checking in can restore them.',
+          ].join('\n\n')),
+      ];
+
+      return interaction.reply({ embeds: helpEmbeds });
+    }
+
     if (interaction.commandName === 'clear-messages') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
         return interaction.reply({ content: 'You need the Manage Messages permission to do this.', ephemeral: true });

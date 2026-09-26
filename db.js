@@ -202,7 +202,7 @@ db.prepare(`
 `).run();
 
 const MAX_SHIELDS = 3;
-const XP_COOLDOWN_MS = 30 * 60 * 1000;
+const XP_COOLDOWN_MS = 5 * 60 * 1000;
 
 function getLevelProgress(totalXp) {
   let level = Math.floor((Math.sqrt(9025 + 20 * totalXp) - 95) / 10) + 1;
