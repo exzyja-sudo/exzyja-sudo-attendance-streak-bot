@@ -33,7 +33,7 @@ nicknames.
 - Members earn 15–25 chat XP for a message, with a 30-minute per-member
   cooldown. Every 160 XP grants a level; level-ups are announced in the
   message channel by default. `/level-config announcement-channel` lets a
-  server manager choose a dedicated announcement channel. `/add-levels user
+  server manager choose a dedicated announcement channel. `/level-up user
   levels` manually grants levels to a member; `/level` shows progress and
   `/level-leaderboard` shows the server rankings.
 - When a member's streak reaches zero, the bot can remove the saved active

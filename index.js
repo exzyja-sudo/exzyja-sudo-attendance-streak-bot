@@ -1269,7 +1269,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ embeds: [embed] });
     }
 
-    if (interaction.commandName === 'add-levels') {
+    if (interaction.commandName === 'level-up') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }

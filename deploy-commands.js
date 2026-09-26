@@ -160,8 +160,8 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
-    .setName('add-levels')
-    .setDescription('Manually grant levels to a member')
+    .setName('level-up')
+    .setDescription('Grant levels to a member')
     .addUserOption(opt =>
       opt.setName('user').setDescription('Member who will receive levels').setRequired(true))
     .addIntegerOption(opt =>
