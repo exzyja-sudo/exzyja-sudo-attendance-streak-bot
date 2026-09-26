@@ -11,6 +11,7 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
   const testDbPath = path.join(tempRoot, 'levels.sqlite');
   process.env.DB_PATH = testDbPath;
   const dbModulePath = require.resolve('../db.js');
+  let db;
   delete require.cache[dbModulePath];
 
   try {
@@ -28,36 +29,60 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
       .run('legacy-guild', 'legacy-user', 250, 1000);
     legacyDb.close();
 
-    const db = require('../db.js');
+    db = require('../db.js');
     assert.equal(db.getLevel('legacy-guild', 'legacy-user').level, 3);
-    assert.equal(db.getLevel('legacy-guild', 'legacy-user').xp_into_level, 80);
+    assert.equal(db.getLevel('legacy-guild', 'legacy-user').xp_into_level, 60);
 
-    const firstAward = db.awardMessageXp('guild-a', 'user-a', 155, 30 * 60 * 1000, 100000);
-    assert.equal(firstAward.total_xp, 155);
+    const firstAward = db.awardMessageXp('guild-a', 'user-a', 95, 30 * 60 * 1000, 100000);
+    assert.equal(firstAward.total_xp, 95);
     assert.equal(firstAward.level, 1);
 
     const cooledDown = db.awardMessageXp('guild-a', 'user-a', 20, 30 * 60 * 1000, 120000);
     assert.equal(cooledDown.awarded, false);
-    assert.equal(cooledDown.total_xp, 155);
+    assert.equal(cooledDown.total_xp, 95);
 
     const levelUp = db.awardMessageXp('guild-a', 'user-a', 15, 30 * 60 * 1000, 1900000);
-    assert.equal(levelUp.total_xp, 170);
+    assert.equal(levelUp.total_xp, 110);
     assert.equal(levelUp.previous_level, 1);
     assert.equal(levelUp.level, 2);
     assert.equal(levelUp.xp_into_level, 10);
+    assert.equal(levelUp.xp_to_next_level, 100);
+
+    const secondLevelAward = db.awardMessageXp('guild-a', 'user-c', 100, 30 * 60 * 1000, 100000);
+    assert.equal(secondLevelAward.level, 2);
+    assert.equal(secondLevelAward.xp_into_level, 0);
+    assert.equal(secondLevelAward.xp_to_next_level, 110);
+    const thirdLevelAward = db.awardMessageXp('guild-a', 'user-c', 110, 30 * 60 * 1000, 1900000);
+    assert.equal(thirdLevelAward.level, 3);
+    assert.equal(thirdLevelAward.xp_into_level, 0);
+    assert.equal(thirdLevelAward.xp_to_next_level, 120);
+
+    db.awardMessageXp('guild-a', 'user-d', 98, 30 * 60 * 1000, 100000);
+    const reactionAward = db.awardReactionXp('guild-a', 'user-d');
+    assert.equal(reactionAward.total_xp, 101);
+    assert.equal(reactionAward.previous_level, 1);
+    assert.equal(reactionAward.level, 2);
+    const repeatedReaction = db.awardReactionXp('guild-a', 'user-d');
+    assert.equal(repeatedReaction.awarded, true);
+    assert.equal(repeatedReaction.total_xp, 104);
+    assert.equal(repeatedReaction.last_xp_at, 100000);
+    const messageDuringCooldown = db.awardMessageXp('guild-a', 'user-d', 15, 30 * 60 * 1000, 100001);
+    assert.equal(messageDuringCooldown.awarded, false);
+    assert.equal(messageDuringCooldown.total_xp, 104);
 
     db.awardMessageXp('guild-a', 'user-b', 150, 30 * 60 * 1000, 100000);
     const manualGrant = db.addLevels('guild-a', 'user-b', 2);
-    assert.equal(manualGrant.level, 3);
-    assert.equal(manualGrant.xp_into_level, 150);
+    assert.equal(manualGrant.level, 4);
+    assert.equal(manualGrant.xp_into_level, 50);
+    assert.equal(manualGrant.xp_added, 230);
     assert.equal(manualGrant.levels_added, 2);
-    assert.deepEqual(db.getLevelLeaderboard('guild-a').map(row => row.user_id), ['user-b', 'user-a']);
+    assert.deepEqual(db.getLevelLeaderboard('guild-a').map(row => row.user_id), ['user-b', 'user-c', 'user-a', 'user-d']);
     assert.deepEqual(db.getLevelLeaderboard('guild-b'), []);
     db.setLevelAnnouncementChannel('guild-a', 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
-    db.close();
   } finally {
+    db?.close();
     delete require.cache[dbModulePath];
     if (previousDbPath === undefined) {
       delete process.env.DB_PATH;

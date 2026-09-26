@@ -71,7 +71,7 @@ db.exec(`
     user_id TEXT NOT NULL,
     total_xp INTEGER NOT NULL DEFAULT 0,
     last_xp_at INTEGER NOT NULL DEFAULT 0,
-    progression_version INTEGER NOT NULL DEFAULT 2,
+    progression_version INTEGER NOT NULL DEFAULT 3,
     PRIMARY KEY (guild_id, user_id)
   );
 
@@ -141,6 +141,19 @@ function ensureColumn(table, col, decl) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
   }
 }
+const XP_BASE_PER_LEVEL = 100;
+const XP_LEVEL_INCREMENT = 10;
+const LEGACY_XP_PER_LEVEL = 160;
+
+function xpRequiredForLevelUps(startingLevel, levels) {
+  return levels * (XP_BASE_PER_LEVEL + (startingLevel - 1) * XP_LEVEL_INCREMENT)
+    + XP_LEVEL_INCREMENT * levels * (levels - 1) / 2;
+}
+
+function xpRequiredToReachLevel(level) {
+  return xpRequiredForLevelUps(1, level - 1);
+}
+
 ensureColumn('streaks', 'shields_used', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'shields_month', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('streaks', 'shielded_date', 'TEXT');
@@ -163,11 +176,25 @@ ensureColumn('polls', 'access_role_id', 'TEXT');
 ensureColumn('user_levels', 'progression_version', 'INTEGER NOT NULL DEFAULT 1');
 db.prepare(`
   UPDATE user_levels
-  SET total_xp = CAST(total_xp / 100 AS INTEGER) * 160
-    + CAST(ROUND((total_xp % 100) * 1.6) AS INTEGER),
+  SET total_xp = CAST(total_xp / 100 AS INTEGER) * ${LEGACY_XP_PER_LEVEL}
+    + CAST(ROUND((total_xp % 100) * ${LEGACY_XP_PER_LEVEL}.0 / 100) AS INTEGER),
       progression_version = 2
   WHERE progression_version < 2
 `).run();
+const migrateLevelProgress = db.transaction(rows => {
+  for (const row of rows) {
+    const oldLevel = Math.floor(row.total_xp / LEGACY_XP_PER_LEVEL) + 1;
+    const oldProgress = row.total_xp % LEGACY_XP_PER_LEVEL;
+    const newLevelXp = xpRequiredToReachLevel(oldLevel);
+    const newLevelSize = xpRequiredForLevelUps(oldLevel, 1);
+    const newTotalXp = newLevelXp + Math.round(oldProgress * newLevelSize / LEGACY_XP_PER_LEVEL);
+    db.prepare(`
+      UPDATE user_levels SET total_xp = ?, progression_version = 3
+      WHERE guild_id = ? AND user_id = ?
+    `).run(newTotalXp, row.guild_id, row.user_id);
+  }
+});
+migrateLevelProgress(db.prepare('SELECT * FROM user_levels WHERE progression_version < 3').all());
 db.prepare(`
   UPDATE config SET role_automation_enabled = 1
   WHERE active_role_id IS NOT NULL AND inactive_role_id IS NOT NULL
@@ -175,13 +202,16 @@ db.prepare(`
 `).run();
 
 const MAX_SHIELDS = 3;
-const XP_PER_LEVEL = 160;
 const XP_COOLDOWN_MS = 30 * 60 * 1000;
 
 function getLevelProgress(totalXp) {
-  const level = Math.floor(totalXp / XP_PER_LEVEL) + 1;
-  const xpIntoLevel = totalXp % XP_PER_LEVEL;
-  return { level, xp_into_level: xpIntoLevel, xp_to_next_level: XP_PER_LEVEL - xpIntoLevel };
+  let level = Math.floor((Math.sqrt(9025 + 20 * totalXp) - 95) / 10) + 1;
+  while (xpRequiredToReachLevel(level) > totalXp) level -= 1;
+  while (xpRequiredToReachLevel(level + 1) <= totalXp) level += 1;
+
+  const xpIntoLevel = totalXp - xpRequiredToReachLevel(level);
+  const xpToNextLevel = xpRequiredForLevelUps(level, 1) - xpIntoLevel;
+  return { level, xp_into_level: xpIntoLevel, xp_to_next_level: xpToNextLevel };
 }
 
 function awardMessageXp(guildId, userId, amount, cooldownMs = XP_COOLDOWN_MS, now = Date.now()) {
@@ -215,6 +245,35 @@ function awardMessageXp(guildId, userId, amount, cooldownMs = XP_COOLDOWN_MS, no
   return award();
 }
 
+function awardReactionXp(guildId, userId, amount = 3) {
+  if (!Number.isSafeInteger(amount) || amount < 1) {
+    throw new RangeError('Reaction XP must be a positive integer.');
+  }
+
+  const award = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
+    const previousXp = existing?.total_xp || 0;
+    const totalXp = previousXp + amount;
+    db.prepare(`
+      INSERT INTO user_levels (guild_id, user_id, total_xp, last_xp_at, progression_version)
+      VALUES (?, ?, ?, 0, 3)
+      ON CONFLICT(guild_id, user_id) DO UPDATE SET total_xp = excluded.total_xp
+    `).run(guildId, userId, totalXp);
+
+    return {
+      awarded: true,
+      guild_id: guildId,
+      user_id: userId,
+      total_xp: totalXp,
+      last_xp_at: existing?.last_xp_at || 0,
+      previous_level: getLevelProgress(previousXp).level,
+      ...getLevelProgress(totalXp),
+    };
+  });
+
+  return award();
+}
+
 function addLevels(guildId, userId, levels) {
   if (!Number.isSafeInteger(levels) || levels < 1) {
     throw new RangeError('Levels to add must be a positive integer.');
@@ -223,12 +282,14 @@ function addLevels(guildId, userId, levels) {
   const add = db.transaction(() => {
     const existing = db.prepare('SELECT total_xp FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
     const previousXp = existing?.total_xp || 0;
+    const previousProgress = getLevelProgress(previousXp);
+    const xpAdded = xpRequiredForLevelUps(previousProgress.level, levels);
     db.prepare(`
       INSERT OR IGNORE INTO user_levels (guild_id, user_id, total_xp, last_xp_at, progression_version)
-      VALUES (?, ?, 0, 0, 2)
+      VALUES (?, ?, 0, 0, 3)
     `).run(guildId, userId);
     db.prepare('UPDATE user_levels SET total_xp = total_xp + ? WHERE guild_id = ? AND user_id = ?')
-      .run(levels * XP_PER_LEVEL, guildId, userId);
+      .run(xpAdded, guildId, userId);
     const totalXp = db.prepare('SELECT total_xp FROM user_levels WHERE guild_id = ? AND user_id = ?')
       .get(guildId, userId).total_xp;
 
@@ -237,7 +298,8 @@ function addLevels(guildId, userId, levels) {
       user_id: userId,
       total_xp: totalXp,
       levels_added: levels,
-      previous_level: getLevelProgress(previousXp).level,
+      xp_added: xpAdded,
+      previous_level: previousProgress.level,
       ...getLevelProgress(totalXp),
     };
   });
@@ -613,9 +675,11 @@ function close() {
 
 module.exports = {
   MAX_SHIELDS,
-  XP_PER_LEVEL,
+  XP_BASE_PER_LEVEL,
+  XP_LEVEL_INCREMENT,
   XP_COOLDOWN_MS,
   awardMessageXp,
+  awardReactionXp,
   addLevels,
   getLevel,
   getLevelLeaderboard,

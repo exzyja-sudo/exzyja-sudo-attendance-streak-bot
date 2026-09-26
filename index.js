@@ -305,6 +305,21 @@ const POLL_EMOJIS = ['🟢', '🔴'];
 const MEETME_DURATION_MS = 20 * 60 * 1000;
 const MESSAGE_XP_COOLDOWN_MS = db.XP_COOLDOWN_MS;
 
+function buildLevelUpEmbed({ username, previousLevel, level, xpAdded, totalXp, xpIntoLevel, xpRequired }) {
+  return new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle('🎉 LEVEL UP! 🎉')
+    .setDescription(`**${username}** just reached **Level ${level}**!`)
+    .addFields(
+      { name: 'Level', value: `**${previousLevel} → ${level}**`, inline: true },
+      { name: 'XP Added', value: `**+${xpAdded} XP**`, inline: true },
+      { name: 'Total XP', value: `**${totalXp} XP**`, inline: true },
+      { name: 'Next Level', value: `**${xpIntoLevel}/${xpRequired} XP**` },
+    )
+    .setFooter({ text: 'Keep chatting to reach the next level!' })
+    .setTimestamp();
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -314,6 +329,33 @@ const client = new Client({
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
 });
+
+async function sendLevelUpAnnouncement(guildId, user, result, xpAdded, fallbackChannel) {
+  const configuredChannelId = db.getLevelAnnouncementChannel(guildId);
+  const announcementChannel = configuredChannelId
+    ? await client.channels.fetch(configuredChannelId).catch(() => null)
+    : fallbackChannel;
+  if (!announcementChannel?.isTextBased()) {
+    console.error(`[level] Configured announcement channel is unavailable in guild ${guildId}.`);
+    return false;
+  }
+
+  const levelUpEmbed = buildLevelUpEmbed({
+    username: user.username,
+    previousLevel: result.previous_level,
+    level: result.level,
+    xpAdded,
+    totalXp: result.total_xp,
+    xpIntoLevel: result.xp_into_level,
+    xpRequired: result.xp_into_level + result.xp_to_next_level,
+  });
+  await announcementChannel.send({
+    content: `🎊 <@${user.id}> leveled up!`,
+    embeds: [levelUpEmbed],
+    allowedMentions: { users: [user.id] },
+  });
+  return true;
+}
 
 // guildId -> node-cron task, so we can reschedule after /setup-attendance
 const scheduledTasks = new Map();
@@ -731,34 +773,7 @@ client.on(Events.MessageCreate, async message => {
     const amount = 15 + Math.floor(Math.random() * 11);
     const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
     if (!result.awarded || result.level === result.previous_level) return;
-
-    const configuredChannelId = db.getLevelAnnouncementChannel(message.guildId);
-    const announcementChannel = configuredChannelId
-      ? await client.channels.fetch(configuredChannelId).catch(() => null)
-      : message.channel;
-    if (!announcementChannel?.isTextBased()) {
-      console.error(`[level] Configured announcement channel is unavailable in guild ${message.guildId}.`);
-      return;
-    }
-
-    const levelUpEmbed = new EmbedBuilder()
-      .setColor(0xf1c40f)
-      .setTitle('🎉 LEVEL UP! 🎉')
-      .setDescription(`**${message.author.username}** just reached **Level ${result.level}**!`)
-      .addFields(
-        { name: 'Level', value: `**${result.previous_level} → ${result.level}**`, inline: true },
-        { name: 'XP Earned', value: `**+${amount} XP**`, inline: true },
-        { name: 'Total XP', value: `**${result.total_xp} XP**`, inline: true },
-        { name: 'Next Level', value: `**${result.xp_into_level}/${db.XP_PER_LEVEL} XP**` },
-      )
-      .setFooter({ text: 'Keep chatting to reach the next level!' })
-      .setTimestamp();
-
-    await announcementChannel.send({
-      content: `🎊 <@${message.author.id}> leveled up!`,
-      embeds: [levelUpEmbed],
-      allowedMentions: { users: [message.author.id] },
-    });
+    await sendLevelUpAnnouncement(message.guildId, message.author, result, amount, message.channel);
   } catch (err) {
     console.error(`[level] Failed to process message XP for ${message.author.id}:`, err.message);
   }
@@ -1253,7 +1268,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const user = interaction.options.getUser('user') || interaction.user;
       const progress = db.getLevel(interaction.guildId, user.id);
       return interaction.reply({
-        content: `${user.id === interaction.user.id ? 'You are' : `${user.username} is`} **Level ${progress.level}** with **${progress.total_xp} XP**. Progress to the next level: **${progress.xp_into_level}/${db.XP_PER_LEVEL} XP**.`,
+        content: `${user.id === interaction.user.id ? 'You are' : `${user.username} is`} **Level ${progress.level}** with **${progress.total_xp} XP**. Progress to the next level: **${progress.xp_into_level}/${progress.xp_into_level + progress.xp_to_next_level} XP**.`,
       });
     }
 
@@ -1277,8 +1292,36 @@ client.on(Events.InteractionCreate, async interaction => {
       const user = interaction.options.getUser('user', true);
       const levels = interaction.options.getInteger('levels', true);
       const result = db.addLevels(interaction.guildId, user.id, levels);
+      const configuredChannelId = db.getLevelAnnouncementChannel(interaction.guildId);
+      const announcementChannel = configuredChannelId
+        ? await client.channels.fetch(configuredChannelId).catch(() => null)
+        : interaction.channel;
+      let announced = false;
+
+      if (announcementChannel?.isTextBased()) {
+        const levelUpEmbed = buildLevelUpEmbed({
+          username: user.username,
+          previousLevel: result.previous_level,
+          level: result.level,
+          xpAdded: result.xp_added,
+          totalXp: result.total_xp,
+          xpIntoLevel: result.xp_into_level,
+          xpRequired: result.xp_into_level + result.xp_to_next_level,
+        });
+        try {
+          await announcementChannel.send({
+            content: `🎊 <@${user.id}> leveled up!`,
+            embeds: [levelUpEmbed],
+            allowedMentions: { users: [user.id] },
+          });
+          announced = true;
+        } catch (error) {
+          console.error(`[level] Failed to announce manual level-up for ${user.id}:`, error.message);
+        }
+      }
+
       return interaction.reply({
-        content: `Added **${levels} level${levels === 1 ? '' : 's'}** for ${user}. They are now **Level ${result.level}** with **${result.total_xp} XP**.`,
+        content: `Added **${levels} level${levels === 1 ? '' : 's'}** for ${user}. They are now **Level ${result.level}** with **${result.total_xp} XP**.${announced ? ` Announced in ${announcementChannel}.` : ' The grant succeeded, but I could not post in the configured announcement channel.'}`,
         ephemeral: true,
       });
     }
@@ -1684,10 +1727,19 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     if (user.bot) return;
     if (reaction.partial) await reaction.fetch();
     if (reaction.message.partial) await reaction.message.fetch();
-    if (reaction.emoji.name !== CHECK_EMOJI) return;
 
     const guildId = reaction.message.guildId;
     if (!guildId) return;
+
+    const author = reaction.message.author;
+    if (author && !author.bot && !reaction.message.webhookId && author.id !== user.id) {
+      const result = db.awardReactionXp(guildId, author.id, 3);
+      if (result.awarded && result.level > result.previous_level) {
+        await sendLevelUpAnnouncement(guildId, author, result, 3, reaction.message.channel);
+      }
+    }
+
+    if (reaction.emoji.name !== CHECK_EMOJI) return;
 
     const config = db.getConfig(guildId);
     const today = config ? todayStr(config.timezone) : null;
