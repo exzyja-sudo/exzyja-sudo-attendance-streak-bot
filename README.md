@@ -24,6 +24,9 @@ nicknames.
   - Anything older / never → streak resets to 1
 - `/streaks` posts a leaderboard sorted by current streak.
 - `/my-streak` privately tells a user their own streak and shields left.
+- `/meetme user` gives a member the configured MeetMe role for 20 minutes.
+  Managers can use `/close-meetme user` to remove the role and end the
+  assignment early.
 - Members earn 15–25 chat XP for a message, with a 30-minute per-member
   cooldown. Every 160 XP grants a level; level-ups are announced in the
   message channel by default. `/level-config announcement-channel` lets a

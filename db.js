@@ -385,6 +385,15 @@ function getDueMeetmeAssignments(now = Date.now()) {
   `).all(now);
 }
 
+function getActiveMeetmeAssignment(guildId, userId) {
+  return db.prepare(`
+    SELECT * FROM meetme_assignments
+    WHERE guild_id = ? AND user_id = ? AND removed_at IS NULL
+    ORDER BY expires_at DESC, id DESC
+    LIMIT 1
+  `).get(guildId, userId);
+}
+
 function markMeetmeAssignmentRemoved(id, removedAt = Date.now()) {
   db.prepare('UPDATE meetme_assignments SET removed_at = ? WHERE id = ?').run(removedAt, id);
 }
@@ -624,6 +633,7 @@ module.exports = {
   markPollClosed,
   hasActivePollForAccess,
   createMeetmeAssignment,
+  getActiveMeetmeAssignment,
   getDueMeetmeAssignments,
   markMeetmeAssignmentRemoved,
   setActiveMessage,

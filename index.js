@@ -736,8 +736,22 @@ client.on(Events.MessageCreate, async message => {
       return;
     }
 
+    const levelUpEmbed = new EmbedBuilder()
+      .setColor(0xf1c40f)
+      .setTitle('🎉 LEVEL UP! 🎉')
+      .setDescription(`**${message.author.username}** just reached **Level ${result.level}**!`)
+      .addFields(
+        { name: 'Level', value: `**${result.previous_level} → ${result.level}**`, inline: true },
+        { name: 'XP Earned', value: `**+${amount} XP**`, inline: true },
+        { name: 'Total XP', value: `**${result.total_xp} XP**`, inline: true },
+        { name: 'Next Level', value: `**${result.xp_into_level}/${db.XP_PER_LEVEL} XP**` },
+      )
+      .setFooter({ text: 'Keep chatting to reach the next level!' })
+      .setTimestamp();
+
     await announcementChannel.send({
-      content: `${message.author} reached **Level ${result.level}**!`,
+      content: `🎊 <@${message.author.id}> leveled up!`,
+      embeds: [levelUpEmbed],
       allowedMentions: { users: [message.author.id] },
     });
   } catch (err) {
@@ -1363,6 +1377,68 @@ client.on(Events.InteractionCreate, async interaction => {
       await announcementChannel.send({ embeds: [notice] });
 
       return interaction.reply({ content: `✅ Assigned ${meetmeRole} to ${member} and announced it in ${announcementChannel}.`, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'close-meetme') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const assignment = db.getActiveMeetmeAssignment(interaction.guildId, user.id);
+      if (!assignment) {
+        return interaction.reply({ content: `${user} has no active MeetMe assignment.`, ephemeral: true });
+      }
+
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (!member) {
+        db.markMeetmeAssignmentRemoved(assignment.id);
+        return interaction.reply({ content: `${user} is no longer in this server; their MeetMe assignment has been closed.`, ephemeral: true });
+      }
+
+      const meetmeRole = interaction.guild.roles.cache.get(assignment.role_id)
+        || await interaction.guild.roles.fetch(assignment.role_id).catch(() => null);
+      if (!meetmeRole) {
+        db.markMeetmeAssignmentRemoved(assignment.id);
+        return interaction.reply({ content: `The MeetMe role no longer exists. ${member}'s assignment has been closed.`, ephemeral: true });
+      }
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply({ content: 'I need the Manage Roles permission to remove the MeetMe role.', ephemeral: true });
+      }
+      if (meetmeRole.position >= botMember.roles.highest.position) {
+        return interaction.reply({ content: `Move my highest role above ${meetmeRole} before closing this MeetMe assignment.`, ephemeral: true });
+      }
+
+      const hadRole = member.roles.cache.has(meetmeRole.id);
+      if (hadRole) {
+        await member.roles.remove(meetmeRole, `MeetMe assignment closed by ${interaction.user.tag}`);
+      }
+      db.markMeetmeAssignmentRemoved(assignment.id);
+
+      const config = db.getConfig(interaction.guildId);
+      const announcementChannel = config?.announcement_channel_id
+        ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
+        : null;
+      if (announcementChannel?.isTextBased()) {
+        const notice = new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle('🚪 Meeting Room Access Ended')
+          .setDescription(`${member}'s MeetMe access was ended early by ${interaction.user}.`)
+          .setFooter({ text: 'MeetMe assignment closed manually' })
+          .setTimestamp();
+        await announcementChannel.send({ embeds: [notice] }).catch(err =>
+          console.error(`[meetme] Failed to announce manual closure for ${user.id}:`, err.message)
+        );
+      }
+
+      return interaction.reply({
+        content: hadRole
+          ? `✅ Removed ${meetmeRole} from ${member} and closed their MeetMe assignment.`
+          : `✅ Closed ${member}'s MeetMe assignment; they no longer had ${meetmeRole}.`,
+        ephemeral: true,
+      });
     }
 
     if (interaction.commandName === 'forgive-inactive') {

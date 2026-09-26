@@ -188,6 +188,13 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('close-meetme')
+    .setDescription('End a member\'s active MeetMe assignment early')
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member whose MeetMe access should end').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('forgive-inactive')
     .setDescription('Restore a member\'s roles after forgiving their inactive status')
     .addUserOption(opt =>
