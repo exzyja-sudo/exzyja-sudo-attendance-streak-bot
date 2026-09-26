@@ -71,7 +71,13 @@ db.exec(`
     user_id TEXT NOT NULL,
     total_xp INTEGER NOT NULL DEFAULT 0,
     last_xp_at INTEGER NOT NULL DEFAULT 0,
+    progression_version INTEGER NOT NULL DEFAULT 2,
     PRIMARY KEY (guild_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS level_settings (
+    guild_id TEXT PRIMARY KEY,
+    announcement_channel_id TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS daily_checkins (
@@ -154,6 +160,14 @@ ensureColumn('config', 'role_automation_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'absence_days', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'last_absence_date', 'TEXT');
 ensureColumn('polls', 'access_role_id', 'TEXT');
+ensureColumn('user_levels', 'progression_version', 'INTEGER NOT NULL DEFAULT 1');
+db.prepare(`
+  UPDATE user_levels
+  SET total_xp = CAST(total_xp / 100 AS INTEGER) * 160
+    + CAST(ROUND((total_xp % 100) * 1.6) AS INTEGER),
+      progression_version = 2
+  WHERE progression_version < 2
+`).run();
 db.prepare(`
   UPDATE config SET role_automation_enabled = 1
   WHERE active_role_id IS NOT NULL AND inactive_role_id IS NOT NULL
@@ -161,7 +175,8 @@ db.prepare(`
 `).run();
 
 const MAX_SHIELDS = 3;
-const XP_PER_LEVEL = 100;
+const XP_PER_LEVEL = 160;
+const XP_COOLDOWN_MS = 30 * 60 * 1000;
 
 function getLevelProgress(totalXp) {
   const level = Math.floor(totalXp / XP_PER_LEVEL) + 1;
@@ -169,7 +184,7 @@ function getLevelProgress(totalXp) {
   return { level, xp_into_level: xpIntoLevel, xp_to_next_level: XP_PER_LEVEL - xpIntoLevel };
 }
 
-function awardMessageXp(guildId, userId, amount, cooldownMs = 60000, now = Date.now()) {
+function awardMessageXp(guildId, userId, amount, cooldownMs = XP_COOLDOWN_MS, now = Date.now()) {
   const award = db.transaction(() => {
     const existing = db.prepare('SELECT * FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
     if (existing && now - existing.last_xp_at < cooldownMs) {
@@ -198,6 +213,49 @@ function awardMessageXp(guildId, userId, amount, cooldownMs = 60000, now = Date.
   });
 
   return award();
+}
+
+function addLevels(guildId, userId, levels) {
+  if (!Number.isSafeInteger(levels) || levels < 1) {
+    throw new RangeError('Levels to add must be a positive integer.');
+  }
+
+  const add = db.transaction(() => {
+    const existing = db.prepare('SELECT total_xp FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
+    const previousXp = existing?.total_xp || 0;
+    db.prepare(`
+      INSERT OR IGNORE INTO user_levels (guild_id, user_id, total_xp, last_xp_at, progression_version)
+      VALUES (?, ?, 0, 0, 2)
+    `).run(guildId, userId);
+    db.prepare('UPDATE user_levels SET total_xp = total_xp + ? WHERE guild_id = ? AND user_id = ?')
+      .run(levels * XP_PER_LEVEL, guildId, userId);
+    const totalXp = db.prepare('SELECT total_xp FROM user_levels WHERE guild_id = ? AND user_id = ?')
+      .get(guildId, userId).total_xp;
+
+    return {
+      guild_id: guildId,
+      user_id: userId,
+      total_xp: totalXp,
+      levels_added: levels,
+      previous_level: getLevelProgress(previousXp).level,
+      ...getLevelProgress(totalXp),
+    };
+  });
+
+  return add();
+}
+
+function setLevelAnnouncementChannel(guildId, channelId) {
+  db.prepare(`
+    INSERT INTO level_settings (guild_id, announcement_channel_id)
+    VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET announcement_channel_id = excluded.announcement_channel_id
+  `).run(guildId, channelId);
+}
+
+function getLevelAnnouncementChannel(guildId) {
+  return db.prepare('SELECT announcement_channel_id FROM level_settings WHERE guild_id = ?')
+    .get(guildId)?.announcement_channel_id || null;
 }
 
 function getLevel(guildId, userId) {
@@ -547,9 +605,13 @@ function close() {
 module.exports = {
   MAX_SHIELDS,
   XP_PER_LEVEL,
+  XP_COOLDOWN_MS,
   awardMessageXp,
+  addLevels,
   getLevel,
   getLevelLeaderboard,
+  setLevelAnnouncementChannel,
+  getLevelAnnouncementChannel,
   setConfig,
   getConfig,
   getAllConfigs,

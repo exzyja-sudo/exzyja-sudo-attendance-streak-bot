@@ -3,33 +3,59 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const Database = require('better-sqlite3');
 
 test('message XP observes cooldowns, advances levels, and ranks users per guild', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'attendance-levels-'));
   const previousDbPath = process.env.DB_PATH;
-  process.env.DB_PATH = path.join(tempRoot, 'levels.sqlite');
+  const testDbPath = path.join(tempRoot, 'levels.sqlite');
+  process.env.DB_PATH = testDbPath;
   const dbModulePath = require.resolve('../db.js');
   delete require.cache[dbModulePath];
 
   try {
+    const legacyDb = new Database(testDbPath);
+    legacyDb.exec(`
+      CREATE TABLE user_levels (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        total_xp INTEGER NOT NULL DEFAULT 0,
+        last_xp_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (guild_id, user_id)
+      );
+    `);
+    legacyDb.prepare('INSERT INTO user_levels (guild_id, user_id, total_xp, last_xp_at) VALUES (?, ?, ?, ?)')
+      .run('legacy-guild', 'legacy-user', 250, 1000);
+    legacyDb.close();
+
     const db = require('../db.js');
-    const firstAward = db.awardMessageXp('guild-a', 'user-a', 95, 60000, 100000);
-    assert.equal(firstAward.total_xp, 95);
+    assert.equal(db.getLevel('legacy-guild', 'legacy-user').level, 3);
+    assert.equal(db.getLevel('legacy-guild', 'legacy-user').xp_into_level, 80);
+
+    const firstAward = db.awardMessageXp('guild-a', 'user-a', 155, 30 * 60 * 1000, 100000);
+    assert.equal(firstAward.total_xp, 155);
     assert.equal(firstAward.level, 1);
 
-    const cooledDown = db.awardMessageXp('guild-a', 'user-a', 20, 60000, 120000);
+    const cooledDown = db.awardMessageXp('guild-a', 'user-a', 20, 30 * 60 * 1000, 120000);
     assert.equal(cooledDown.awarded, false);
-    assert.equal(cooledDown.total_xp, 95);
+    assert.equal(cooledDown.total_xp, 155);
 
-    const levelUp = db.awardMessageXp('guild-a', 'user-a', 15, 60000, 160000);
-    assert.equal(levelUp.total_xp, 110);
+    const levelUp = db.awardMessageXp('guild-a', 'user-a', 15, 30 * 60 * 1000, 1900000);
+    assert.equal(levelUp.total_xp, 170);
     assert.equal(levelUp.previous_level, 1);
     assert.equal(levelUp.level, 2);
     assert.equal(levelUp.xp_into_level, 10);
 
-    db.awardMessageXp('guild-a', 'user-b', 150, 60000, 100000);
+    db.awardMessageXp('guild-a', 'user-b', 150, 30 * 60 * 1000, 100000);
+    const manualGrant = db.addLevels('guild-a', 'user-b', 2);
+    assert.equal(manualGrant.level, 3);
+    assert.equal(manualGrant.xp_into_level, 150);
+    assert.equal(manualGrant.levels_added, 2);
     assert.deepEqual(db.getLevelLeaderboard('guild-a').map(row => row.user_id), ['user-b', 'user-a']);
     assert.deepEqual(db.getLevelLeaderboard('guild-b'), []);
+    db.setLevelAnnouncementChannel('guild-a', 'channel-123');
+    assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
+    assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
     db.close();
   } finally {
     delete require.cache[dbModulePath];

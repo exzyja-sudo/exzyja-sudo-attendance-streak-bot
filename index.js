@@ -298,7 +298,7 @@ const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./ut
 
 const POLL_EMOJIS = ['🟢', '🔴'];
 const MEETME_DURATION_MS = 20 * 60 * 1000;
-const MESSAGE_XP_COOLDOWN_MS = 60 * 1000;
+const MESSAGE_XP_COOLDOWN_MS = db.XP_COOLDOWN_MS;
 
 const client = new Client({
   intents: [
@@ -727,7 +727,16 @@ client.on(Events.MessageCreate, async message => {
     const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
     if (!result.awarded || result.level === result.previous_level) return;
 
-    await message.channel.send({
+    const configuredChannelId = db.getLevelAnnouncementChannel(message.guildId);
+    const announcementChannel = configuredChannelId
+      ? await client.channels.fetch(configuredChannelId).catch(() => null)
+      : message.channel;
+    if (!announcementChannel?.isTextBased()) {
+      console.error(`[level] Configured announcement channel is unavailable in guild ${message.guildId}.`);
+      return;
+    }
+
+    await announcementChannel.send({
       content: `${message.author} reached **Level ${result.level}**!`,
       allowedMentions: { users: [message.author.id] },
     });
@@ -1155,6 +1164,40 @@ client.on(Events.InteractionCreate, async interaction => {
         .setTitle('Level Leaderboard')
         .setDescription(description);
       return interaction.reply({ embeds: [embed] });
+    }
+
+    if (interaction.commandName === 'add-levels') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const levels = interaction.options.getInteger('levels', true);
+      const result = db.addLevels(interaction.guildId, user.id, levels);
+      return interaction.reply({
+        content: `Added **${levels} level${levels === 1 ? '' : 's'}** for ${user}. They are now **Level ${result.level}** with **${result.total_xp} XP**.`,
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.commandName === 'level-config') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('announcement-channel', true);
+      if (!channel.isTextBased() || channel.isThread()) {
+        return interaction.reply({ content: 'Choose a regular text channel for level-up announcements.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const permissions = botMember && channel.permissionsFor(botMember);
+      if (!permissions?.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.SendMessages)) {
+        return interaction.reply({ content: 'I need View Channel and Send Messages permissions in that channel.', ephemeral: true });
+      }
+
+      db.setLevelAnnouncementChannel(interaction.guildId, channel.id);
+      return interaction.reply({ content: `Level-up announcements will be posted in ${channel}.`, ephemeral: true });
     }
 
     if (interaction.commandName === 'restore-streak') {

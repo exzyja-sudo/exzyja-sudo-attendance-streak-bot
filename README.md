@@ -24,10 +24,12 @@ nicknames.
   - Anything older / never → streak resets to 1
 - `/streaks` posts a leaderboard sorted by current streak.
 - `/my-streak` privately tells a user their own streak and shields left.
-- Members earn 15–25 chat XP for a message, with a 60-second per-member
-  cooldown. Every 100 XP grants a level; level-ups are announced in the
-  channel. `/level` shows a member's progress and `/level-leaderboard` shows
-  the server rankings.
+- Members earn 15–25 chat XP for a message, with a 30-minute per-member
+  cooldown. Every 160 XP grants a level; level-ups are announced in the
+  message channel by default. `/level-config announcement-channel` lets a
+  server manager choose a dedicated announcement channel. `/add-levels user
+  levels` manually grants levels to a member; `/level` shows progress and
+  `/level-leaderboard` shows the server rankings.
 - When a member's streak reaches zero, the bot can remove the saved active
   access roles and add an inactive role. It saves the member's latest active
   roles when they check in, so the bot can restore them later. A configured

@@ -149,6 +149,22 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('add-levels')
+    .setDescription('Manually grant levels to a member')
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member who will receive levels').setRequired(true))
+    .addIntegerOption(opt =>
+      opt.setName('levels').setDescription('Number of levels to grant').setRequired(true).setMinValue(1).setMaxValue(100))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('level-config')
+    .setDescription('Choose where level-up announcements are posted')
+    .addChannelOption(opt =>
+      opt.setName('announcement-channel').setDescription('Channel for level-up announcements').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('restore-streak')
     .setDescription('Manually restore multiple members\' streaks and shields')
     .addStringOption(opt =>
