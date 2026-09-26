@@ -298,6 +298,7 @@ http
   .listen(PORT, () => console.log(`[http] Health check server listening on port ${PORT}`));
 
 const db = require('./db');
+const { getLevelColor } = require('./level-colors');
 const { syncLevelNickname } = require('./level-nicknames');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
@@ -308,7 +309,7 @@ const MESSAGE_XP_COOLDOWN_MS = db.XP_COOLDOWN_MS;
 
 function buildLevelUpEmbed({ username, previousLevel, level, xpAdded, totalXp, xpIntoLevel, xpRequired }) {
   return new EmbedBuilder()
-    .setColor(0xf1c40f)
+    .setColor(getLevelColor(level))
     .setTitle('🎉 LEVEL UP! 🎉')
     .setDescription(`**${username}** just reached **Level ${level}**!`)
     .addFields(
@@ -803,9 +804,9 @@ client.on(Events.InteractionCreate, async interaction => {
           .setDescription([
             '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Another member reacting to your message adds 3 XP each time; self-reactions and bot reactions do not count.',
             '**Level requirements:** 100 XP to reach Level 2, then the next level takes 10 more XP than the previous one (110, 120, and so on).',
-            '**Level display:** Managers can use `/level-nickname enabled:true` to add `Lvl N` to server nicknames. It is off by default and needs Manage Nicknames permission.',
+            '**Level display:** Managers can use `/level-nickname enabled:true` to add a small `ʟᴠʟ` and superscript number to server nicknames. It is off by default and needs Manage Nicknames permission.',
             '**`/level`** View your level, or choose a member. **`/level-leaderboard`** Show the top members by XP.',
-            '**`/level-up user levels`** Managers can manually grant levels. The level-up card is posted in the configured channel.',
+            '**`/level-up user levels`** Managers can manually grant levels. The announcement color follows the new level.',
             '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
           ].join('\n\n')),
         new EmbedBuilder()

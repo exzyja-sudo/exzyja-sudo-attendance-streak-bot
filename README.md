@@ -36,13 +36,14 @@ nicknames.
   with no cooldown; self-reactions and bot reactions do not count.
   A server manager can opt in to appending `Lvl N` to member nicknames with
   `/level-nickname enabled:true`; it is off by default. The existing nickname
-  is preserved as the base (for example, `Alex Lvl 6`). Members are updated
+  is preserved as the base (for example, `Alex ʟᴠʟ ⁶`). Members are updated
   the next time they earn XP. Disabling it stops future changes but leaves
   current nicknames as-is. The bot needs Manage Nicknames and must be above
   each member in the role hierarchy.
   Level 2 takes 100 XP; each later level takes 10 more XP than the
-  previous one (110 XP for level 3, 120 XP for level 4, and so on). Level-ups
-  are announced in the message channel by default. `/level-config announcement-channel` lets a
+  previous one (110 XP for level 3, 120 XP for level 4, and so on). Level-up
+  announcement cards use an accent color based on the new level and are posted
+  in the message channel by default. `/level-config announcement-channel` lets a
   server manager choose a dedicated announcement channel. `/level-up user
   levels` manually grants levels to a member; `/level` shows progress and
   `/level-leaderboard` shows the server rankings.
