@@ -298,6 +298,7 @@ http
   .listen(PORT, () => console.log(`[http] Health check server listening on port ${PORT}`));
 
 const db = require('./db');
+const { syncLevelBadge } = require('./level-badges');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
 
@@ -772,6 +773,7 @@ client.on(Events.MessageCreate, async message => {
   try {
     const amount = 15 + Math.floor(Math.random() * 11);
     const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
+    await syncLevelBadge(message.member, result.level, db);
     if (!result.awarded || result.level === result.previous_level) return;
     await sendLevelUpAnnouncement(message.guildId, message.author, result, amount, message.channel);
   } catch (err) {
@@ -1340,6 +1342,8 @@ client.on(Events.InteractionCreate, async interaction => {
       const user = interaction.options.getUser('user', true);
       const levels = interaction.options.getInteger('levels', true);
       const result = db.addLevels(interaction.guildId, user.id, levels);
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (member) await syncLevelBadge(member, result.level, db);
       const configuredChannelId = db.getLevelAnnouncementChannel(interaction.guildId);
       const announcementChannel = configuredChannelId
         ? await client.channels.fetch(configuredChannelId).catch(() => null)
@@ -1783,6 +1787,8 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     if (author && !author.bot && !reaction.message.webhookId && author.id !== user.id) {
       const result = db.awardReactionXp(guildId, author.id, 3);
       if (result.awarded && result.level > result.previous_level) {
+        const member = await reaction.message.guild.members.fetch(author.id).catch(() => null);
+        if (member) await syncLevelBadge(member, result.level, db);
         await sendLevelUpAnnouncement(guildId, author, result, 3, reaction.message.channel);
       }
     }

@@ -80,6 +80,14 @@ db.exec(`
     announcement_channel_id TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS level_badge_roles (
+    guild_id TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    role_id TEXT NOT NULL,
+    PRIMARY KEY (guild_id, level),
+    UNIQUE (guild_id, role_id)
+  );
+
   CREATE TABLE IF NOT EXISTS daily_checkins (
     guild_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -318,6 +326,24 @@ function setLevelAnnouncementChannel(guildId, channelId) {
 function getLevelAnnouncementChannel(guildId) {
   return db.prepare('SELECT announcement_channel_id FROM level_settings WHERE guild_id = ?')
     .get(guildId)?.announcement_channel_id || null;
+}
+
+function getLevelBadgeRoleId(guildId, level) {
+  return db.prepare('SELECT role_id FROM level_badge_roles WHERE guild_id = ? AND level = ?')
+    .get(guildId, level)?.role_id || null;
+}
+
+function setLevelBadgeRole(guildId, level, roleId) {
+  db.prepare(`
+    INSERT INTO level_badge_roles (guild_id, level, role_id)
+    VALUES (?, ?, ?)
+    ON CONFLICT(guild_id, level) DO UPDATE SET role_id = excluded.role_id
+  `).run(guildId, level, roleId);
+}
+
+function getLevelBadgeRoles(guildId) {
+  return db.prepare('SELECT level, role_id FROM level_badge_roles WHERE guild_id = ? ORDER BY level')
+    .all(guildId);
 }
 
 function getLevel(guildId, userId) {
@@ -685,6 +711,9 @@ module.exports = {
   getLevelLeaderboard,
   setLevelAnnouncementChannel,
   getLevelAnnouncementChannel,
+  getLevelBadgeRoleId,
+  setLevelBadgeRole,
+  getLevelBadgeRoles,
   setConfig,
   getConfig,
   getAllConfigs,

@@ -81,6 +81,14 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
     db.setLevelAnnouncementChannel('guild-a', 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
+    db.setLevelBadgeRole('guild-a', 6, 'role-level-6');
+    db.setLevelBadgeRole('guild-a', 7, 'role-level-7');
+    assert.equal(db.getLevelBadgeRoleId('guild-a', 6), 'role-level-6');
+    assert.deepEqual(db.getLevelBadgeRoles('guild-a'), [
+      { level: 6, role_id: 'role-level-6' },
+      { level: 7, role_id: 'role-level-7' },
+    ]);
+    assert.deepEqual(db.getLevelBadgeRoles('guild-b'), []);
   } finally {
     db?.close();
     delete require.cache[dbModulePath];
