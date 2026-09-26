@@ -89,6 +89,17 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
       { level: 7, role_id: 'role-level-7' },
     ]);
     assert.deepEqual(db.getLevelBadgeRoles('guild-b'), []);
+    db.setLevelNickname('guild-a', 'user-a', 'Original Name', 'Original Name Lvl 6');
+    assert.deepEqual(db.getLevelNickname('guild-a', 'user-a'), {
+      base_name: 'Original Name',
+      managed_nickname: 'Original Name Lvl 6',
+    });
+    assert.equal(db.getLevelNickname('guild-b', 'user-a'), null);
+    assert.equal(db.getLevelNicknameEnabled('guild-a'), false);
+    db.setLevelNicknameEnabled('guild-a', true);
+    assert.equal(db.getLevelNicknameEnabled('guild-a'), true);
+    db.setLevelNicknameEnabled('guild-a', false);
+    assert.equal(db.getLevelNicknameEnabled('guild-a'), false);
   } finally {
     db?.close();
     delete require.cache[dbModulePath];

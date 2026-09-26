@@ -88,6 +88,19 @@ db.exec(`
     UNIQUE (guild_id, role_id)
   );
 
+  CREATE TABLE IF NOT EXISTS level_nicknames (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    base_name TEXT NOT NULL,
+    managed_nickname TEXT NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS level_nickname_settings (
+    guild_id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0
+  );
+
   CREATE TABLE IF NOT EXISTS daily_checkins (
     guild_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -344,6 +357,34 @@ function setLevelBadgeRole(guildId, level, roleId) {
 function getLevelBadgeRoles(guildId) {
   return db.prepare('SELECT level, role_id FROM level_badge_roles WHERE guild_id = ? ORDER BY level')
     .all(guildId);
+}
+
+function getLevelNickname(guildId, userId) {
+  return db.prepare('SELECT base_name, managed_nickname FROM level_nicknames WHERE guild_id = ? AND user_id = ?')
+    .get(guildId, userId) || null;
+}
+
+function setLevelNickname(guildId, userId, baseName, managedNickname) {
+  db.prepare(`
+    INSERT INTO level_nicknames (guild_id, user_id, base_name, managed_nickname)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+      base_name = excluded.base_name,
+      managed_nickname = excluded.managed_nickname
+  `).run(guildId, userId, baseName, managedNickname);
+}
+
+function getLevelNicknameEnabled(guildId) {
+  return Boolean(db.prepare('SELECT enabled FROM level_nickname_settings WHERE guild_id = ?')
+    .get(guildId)?.enabled);
+}
+
+function setLevelNicknameEnabled(guildId, enabled) {
+  db.prepare(`
+    INSERT INTO level_nickname_settings (guild_id, enabled)
+    VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = excluded.enabled
+  `).run(guildId, enabled ? 1 : 0);
 }
 
 function getLevel(guildId, userId) {
@@ -714,6 +755,10 @@ module.exports = {
   getLevelBadgeRoleId,
   setLevelBadgeRole,
   getLevelBadgeRoles,
+  getLevelNickname,
+  setLevelNickname,
+  getLevelNicknameEnabled,
+  setLevelNicknameEnabled,
   setConfig,
   getConfig,
   getAllConfigs,

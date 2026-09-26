@@ -34,10 +34,12 @@ nicknames.
 - Members earn 15–25 chat XP for a message, with a 5-minute per-member
   message cooldown. Another member's reaction adds 3 XP to the message author
   with no cooldown; self-reactions and bot reactions do not count.
-  The bot creates and assigns a numbered role badge for each current level,
-  removing the previous level badge. Existing members are updated the next
-  time they chat. Visible role icons require server role-icon support and the
-  bot's Manage Roles permission.
+  A server manager can opt in to appending `Lvl N` to member nicknames with
+  `/level-nickname enabled:true`; it is off by default. The existing nickname
+  is preserved as the base (for example, `Alex Lvl 6`). Members are updated
+  the next time they earn XP. Disabling it stops future changes but leaves
+  current nicknames as-is. The bot needs Manage Nicknames and must be above
+  each member in the role hierarchy.
   Level 2 takes 100 XP; each later level takes 10 more XP than the
   previous one (110 XP for level 3, 120 XP for level 4, and so on). Level-ups
   are announced in the message channel by default. `/level-config announcement-channel` lets a
@@ -132,14 +134,13 @@ would otherwise have silently skipped that day.
 4. **OAuth2 → General**, copy the **Application ID** (this is `CLIENT_ID`).
 5. **OAuth2 → URL Generator**: scopes `bot` + `applications.commands`;
   bot permissions: `Send Messages`, `Embed Links`, `Add Reactions`, `View Audit Log`,
-  `Read Message History`, `Manage Roles`, `Mention Everyone` (only if you want the
-   `@everyone` ping — remove it from `attendance.js` if not).
+  `Read Message History`, `Manage Roles`, `Manage Nicknames`, `Mention Everyone`
+  (only if you want the `@everyone` ping — remove it from `attendance.js` if not).
 6. Open the generated URL to invite the bot to your server.
 
 If you use automatic roles, move the bot's highest role above both the active
-and inactive roles in **Server Settings → Roles**. The bot also needs to be
-above its automatically-created level roles. Discord will not let a bot manage
-roles at or above its own highest role.
+and inactive roles in **Server Settings → Roles**. When level nicknames are
+enabled, the bot can only update members whose highest role is below its own.
 
 ### 2. Install & configure on your VPS
 

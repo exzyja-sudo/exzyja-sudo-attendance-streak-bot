@@ -181,6 +181,13 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('level-nickname')
+    .setDescription('Enable or disable the automatic level suffix in member nicknames')
+    .addBooleanOption(opt =>
+      opt.setName('enabled').setDescription('Whether level suffixes should be added to nicknames').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('restore-streak')
     .setDescription('Manually restore multiple members\' streaks and shields')
     .addStringOption(opt =>

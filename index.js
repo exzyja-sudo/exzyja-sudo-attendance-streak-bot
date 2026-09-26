@@ -298,7 +298,7 @@ http
   .listen(PORT, () => console.log(`[http] Health check server listening on port ${PORT}`));
 
 const db = require('./db');
-const { syncLevelBadge } = require('./level-badges');
+const { syncLevelNickname } = require('./level-nicknames');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
 const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./utils');
 
@@ -773,7 +773,7 @@ client.on(Events.MessageCreate, async message => {
   try {
     const amount = 15 + Math.floor(Math.random() * 11);
     const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
-    await syncLevelBadge(message.member, result.level, db);
+    await syncLevelNickname(message.member, result.level, db);
     if (!result.awarded || result.level === result.previous_level) return;
     await sendLevelUpAnnouncement(message.guildId, message.author, result, amount, message.channel);
   } catch (err) {
@@ -803,6 +803,7 @@ client.on(Events.InteractionCreate, async interaction => {
           .setDescription([
             '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Another member reacting to your message adds 3 XP each time; self-reactions and bot reactions do not count.',
             '**Level requirements:** 100 XP to reach Level 2, then the next level takes 10 more XP than the previous one (110, 120, and so on).',
+            '**Level display:** Managers can use `/level-nickname enabled:true` to add `Lvl N` to server nicknames. It is off by default and needs Manage Nicknames permission.',
             '**`/level`** View your level, or choose a member. **`/level-leaderboard`** Show the top members by XP.',
             '**`/level-up user levels`** Managers can manually grant levels. The level-up card is posted in the configured channel.',
             '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
@@ -1343,7 +1344,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const levels = interaction.options.getInteger('levels', true);
       const result = db.addLevels(interaction.guildId, user.id, levels);
       const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      if (member) await syncLevelBadge(member, result.level, db);
+      if (member) await syncLevelNickname(member, result.level, db);
       const configuredChannelId = db.getLevelAnnouncementChannel(interaction.guildId);
       const announcementChannel = configuredChannelId
         ? await client.channels.fetch(configuredChannelId).catch(() => null)
@@ -1396,6 +1397,27 @@ client.on(Events.InteractionCreate, async interaction => {
 
       db.setLevelAnnouncementChannel(interaction.guildId, channel.id);
       return interaction.reply({ content: `Level-up announcements will be posted in ${channel}.`, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'level-nickname') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const enabled = interaction.options.getBoolean('enabled', true);
+      if (enabled) {
+        const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+        if (!botMember?.permissions.has(PermissionFlagsBits.ManageNicknames)) {
+          return interaction.reply({ content: 'I need the Manage Nicknames permission before this feature can be enabled.', ephemeral: true });
+        }
+      }
+      db.setLevelNicknameEnabled(interaction.guildId, enabled);
+      return interaction.reply({
+        content: enabled
+          ? 'Automatic `Lvl N` nickname suffixes are enabled. Members will update the next time they earn XP.'
+          : 'Automatic nickname changes are disabled. XP, levels, and level-up announcements will continue as usual.',
+        ephemeral: true,
+      });
     }
 
     if (interaction.commandName === 'restore-streak') {
@@ -1786,10 +1808,12 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     const author = reaction.message.author;
     if (author && !author.bot && !reaction.message.webhookId && author.id !== user.id) {
       const result = db.awardReactionXp(guildId, author.id, 3);
-      if (result.awarded && result.level > result.previous_level) {
+      if (result.awarded) {
         const member = await reaction.message.guild.members.fetch(author.id).catch(() => null);
-        if (member) await syncLevelBadge(member, result.level, db);
-        await sendLevelUpAnnouncement(guildId, author, result, 3, reaction.message.channel);
+        if (member) await syncLevelNickname(member, result.level, db);
+        if (result.level > result.previous_level) {
+          await sendLevelUpAnnouncement(guildId, author, result, 3, reaction.message.channel);
+        }
       }
     }
 
