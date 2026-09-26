@@ -24,6 +24,9 @@ nicknames.
   - Anything older / never → streak resets to 1
 - `/streaks` posts a leaderboard sorted by current streak.
 - `/my-streak` privately tells a user their own streak and shields left.
+- Moderators with Manage Messages can use `/clear-messages channel amount` to
+  review up to 100 recent messages and confirm or cancel deletion. Messages
+  older than 14 days are excluded.
 - `/meetme user` gives a member the configured MeetMe role for 20 minutes.
   Managers can use `/close-meetme user` to remove the role and end the
   assignment early.

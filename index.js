@@ -12,6 +12,11 @@ const {
   AuditLogEvent,
   PermissionFlagsBits,
   EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  ComponentType,
 } = require('discord.js');
 const cron = require('node-cron');
 
@@ -763,6 +768,90 @@ client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
+    if (interaction.commandName === 'clear-messages') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
+        return interaction.reply({ content: 'You need the Manage Messages permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('channel', true);
+      const amount = interaction.options.getInteger('amount', true);
+      if (channel.guildId !== interaction.guildId || !channel.isTextBased() || !channel.messages?.fetch || !channel.bulkDelete) {
+        return interaction.reply({ content: 'Choose a text channel or thread in this server.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const botPermissions = botMember && channel.permissionsFor(botMember);
+      const requiredPermissions = [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageMessages,
+      ];
+      if (!botPermissions || requiredPermissions.some(permission => !botPermissions.has(permission))) {
+        return interaction.reply({ content: 'I need View Channel, Read Message History, and Manage Messages permissions there.', ephemeral: true });
+      }
+
+      const fetchedMessages = await channel.messages.fetch({ limit: amount });
+      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      const messageIds = fetchedMessages
+        .filter(message => message.createdTimestamp >= cutoff)
+        .map(message => message.id);
+      if (messageIds.length === 0) {
+        return interaction.reply({ content: 'There are no messages younger than 14 days to delete in that channel.', ephemeral: true });
+      }
+
+      const confirmId = `clear-confirm-${crypto.randomBytes(8).toString('hex')}`;
+      const cancelId = `clear-cancel-${crypto.randomBytes(8).toString('hex')}`;
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(confirmId).setLabel('Delete Messages').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(cancelId).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+      );
+      const confirmationMessage = await interaction.reply({
+        content: `Delete **${messageIds.length}** recent messages from ${channel}? Messages older than 14 days are excluded. This cannot be undone.`,
+        components: [row],
+        ephemeral: true,
+        fetchReply: true,
+      });
+      const collector = confirmationMessage.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 60 * 1000,
+      });
+
+      collector.on('collect', async buttonInteraction => {
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          return buttonInteraction.reply({ content: 'Only the moderator who started this request can confirm it.', ephemeral: true });
+        }
+        await buttonInteraction.deferUpdate();
+        collector.stop('handled');
+
+        if (buttonInteraction.customId === cancelId) {
+          return interaction.editReply({ content: 'Message deletion cancelled.', components: [] });
+        }
+
+        try {
+          const moderator = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+          if (!moderator?.permissions.has(PermissionFlagsBits.ManageMessages)) {
+            return interaction.editReply({ content: 'Deletion cancelled because you no longer have Manage Messages permission.', components: [] });
+          }
+
+          const deleted = messageIds.length === 1
+            ? await channel.messages.delete(messageIds[0])
+            : await channel.bulkDelete(messageIds, true);
+          const deletedCount = typeof deleted.size === 'number' ? deleted.size : 1;
+          return interaction.editReply({ content: `Deleted **${deletedCount}** message${deletedCount === 1 ? '' : 's'} from ${channel}.`, components: [] });
+        } catch (error) {
+          console.error('[clear-messages] Failed to delete messages:', error);
+          return interaction.editReply({ content: 'I could not delete those messages. Check my channel permissions and try again.', components: [] });
+        }
+      });
+
+      collector.on('end', (_collected, reason) => {
+        if (reason === 'time') {
+          interaction.editReply({ content: 'Message deletion confirmation expired. Run the command again if needed.', components: [] }).catch(() => {});
+        }
+      });
+      return;
+    }
+
     if (interaction.commandName === 'setup-attendance') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });

@@ -1,7 +1,18 @@
 require('dotenv').config();
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const commands = [
+  new SlashCommandBuilder()
+    .setName('clear-messages')
+    .setDescription('Delete recent messages from a selected channel after confirmation')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addChannelOption(opt =>
+      opt.setName('channel').setDescription('Channel to clear messages from').setRequired(true)
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread))
+    .addIntegerOption(opt =>
+      opt.setName('amount').setDescription('Number of recent messages to review (1-100)').setRequired(true).setMinValue(1).setMaxValue(100))
+    .toJSON(),
+
   new SlashCommandBuilder()
     .setName('setup-attendance')
     .setDescription('Configure the daily attendance post for this server')
