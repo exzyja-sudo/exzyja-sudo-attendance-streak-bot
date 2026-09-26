@@ -66,6 +66,14 @@ db.exec(`
     PRIMARY KEY (guild_id, user_id)
   );
 
+  CREATE TABLE IF NOT EXISTS user_levels (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    total_xp INTEGER NOT NULL DEFAULT 0,
+    last_xp_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS daily_checkins (
     guild_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -153,6 +161,64 @@ db.prepare(`
 `).run();
 
 const MAX_SHIELDS = 3;
+const XP_PER_LEVEL = 100;
+
+function getLevelProgress(totalXp) {
+  const level = Math.floor(totalXp / XP_PER_LEVEL) + 1;
+  const xpIntoLevel = totalXp % XP_PER_LEVEL;
+  return { level, xp_into_level: xpIntoLevel, xp_to_next_level: XP_PER_LEVEL - xpIntoLevel };
+}
+
+function awardMessageXp(guildId, userId, amount, cooldownMs = 60000, now = Date.now()) {
+  const award = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
+    if (existing && now - existing.last_xp_at < cooldownMs) {
+      return { awarded: false, ...existing, ...getLevelProgress(existing.total_xp) };
+    }
+
+    const previousXp = existing?.total_xp || 0;
+    const totalXp = previousXp + amount;
+    db.prepare(`
+      INSERT INTO user_levels (guild_id, user_id, total_xp, last_xp_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(guild_id, user_id) DO UPDATE SET
+        total_xp = excluded.total_xp,
+        last_xp_at = excluded.last_xp_at
+    `).run(guildId, userId, totalXp, now);
+
+    return {
+      awarded: true,
+      guild_id: guildId,
+      user_id: userId,
+      total_xp: totalXp,
+      last_xp_at: now,
+      previous_level: getLevelProgress(previousXp).level,
+      ...getLevelProgress(totalXp),
+    };
+  });
+
+  return award();
+}
+
+function getLevel(guildId, userId) {
+  const row = db.prepare('SELECT * FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
+  const totalXp = row?.total_xp || 0;
+  return {
+    guild_id: guildId,
+    user_id: userId,
+    total_xp: totalXp,
+    ...getLevelProgress(totalXp),
+  };
+}
+
+function getLevelLeaderboard(guildId, limit = 10) {
+  return db.prepare(`
+    SELECT guild_id, user_id, total_xp FROM user_levels
+    WHERE guild_id = ?
+    ORDER BY total_xp DESC, user_id
+    LIMIT ?
+  `).all(guildId, limit).map(row => ({ ...row, ...getLevelProgress(row.total_xp) }));
+}
 
 // ---- config ----
 function setConfig(guildId, { channelId, hour, minute, timezone, title, body, announcementChannelId, configuredDate, activeRoleId, inactiveRoleId, exemptionRoleId, meetmeRoleId, roleAutomationEnabled }) {
@@ -480,6 +546,10 @@ function close() {
 
 module.exports = {
   MAX_SHIELDS,
+  XP_PER_LEVEL,
+  awardMessageXp,
+  getLevel,
+  getLevelLeaderboard,
   setConfig,
   getConfig,
   getAllConfigs,

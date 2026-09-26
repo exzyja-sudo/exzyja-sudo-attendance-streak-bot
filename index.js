@@ -298,6 +298,7 @@ const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./ut
 
 const POLL_EMOJIS = ['🟢', '🔴'];
 const MEETME_DURATION_MS = 20 * 60 * 1000;
+const MESSAGE_XP_COOLDOWN_MS = 60 * 1000;
 
 const client = new Client({
   intents: [
@@ -718,6 +719,23 @@ client.once(Events.ClientReady, async () => {
   await processDueMeetmeAssignments();
 });
 
+client.on(Events.MessageCreate, async message => {
+  if (!message.guildId || message.author.bot || message.webhookId || message.system) return;
+
+  try {
+    const amount = 15 + Math.floor(Math.random() * 11);
+    const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
+    if (!result.awarded || result.level === result.previous_level) return;
+
+    await message.channel.send({
+      content: `${message.author} reached **Level ${result.level}**!`,
+      allowedMentions: { users: [message.author.id] },
+    });
+  } catch (err) {
+    console.error(`[level] Failed to process message XP for ${message.author.id}:`, err.message);
+  }
+});
+
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -1117,6 +1135,26 @@ client.on(Events.InteractionCreate, async interaction => {
         content: `🔥 You're on a **${row.current_streak}-day** streak (best: ${row.longest_streak}). Shields left this month: **${shieldsLeft}/${db.MAX_SHIELDS}** (auto-used if you miss a single day).`,
         ephemeral: true,
       });
+    }
+
+    if (interaction.commandName === 'level') {
+      const user = interaction.options.getUser('user') || interaction.user;
+      const progress = db.getLevel(interaction.guildId, user.id);
+      return interaction.reply({
+        content: `${user.id === interaction.user.id ? 'You are' : `${user.username} is`} **Level ${progress.level}** with **${progress.total_xp} XP**. Progress to the next level: **${progress.xp_into_level}/${db.XP_PER_LEVEL} XP**.`,
+      });
+    }
+
+    if (interaction.commandName === 'level-leaderboard') {
+      const leaderboard = db.getLevelLeaderboard(interaction.guildId);
+      const description = leaderboard.length
+        ? leaderboard.map((row, index) => `**${index + 1}.** <@${row.user_id}> — Level **${row.level}** (${row.total_xp} XP)`).join('\n')
+        : 'No one has earned XP yet. Send a message to get started!';
+      const embed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('Level Leaderboard')
+        .setDescription(description);
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'restore-streak') {

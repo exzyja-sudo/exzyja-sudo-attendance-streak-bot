@@ -137,6 +137,18 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('level')
+    .setDescription('Show your chat level and XP')
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member whose level to view').setRequired(false))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('level-leaderboard')
+    .setDescription('Show the server chat level leaderboard')
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('restore-streak')
     .setDescription('Manually restore multiple members\' streaks and shields')
     .addStringOption(opt =>
