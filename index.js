@@ -379,6 +379,7 @@ async function buildLevelLeaderboardEmbed(guildId) {
   }
 
   const medals = ['🥇', '🥈', '🥉'];
+  const nameColumnWidth = 20;
   const lines = await Promise.all(leaderboard.map(async (row, index) => {
     const member = guild?.members.cache.get(row.user_id)
       || (guild ? await guild.members.fetch(row.user_id).catch(() => null) : null);
@@ -401,10 +402,12 @@ async function buildLevelLeaderboardEmbed(guildId) {
     const displayName = nameChars.length > 20
       ? `${nameChars.slice(0, 19).join('')}…`
       : safeName;
-    const rank = medals[index] ? `${medals[index]} ` : `${index + 1}. `;
-    return `${rank}**${displayName}**  |  ⭐ **${row.level}**`;
+    const rank = medals[index]
+      ? `${medals[index]}  `
+      : `${String(index + 1).padStart(2, ' ')}. `;
+    return `${rank}${displayName.padEnd(nameColumnWidth, ' ')} | ⭐ ${row.level}`;
   }));
-  embed.setDescription(lines.join('\n'));
+  embed.setDescription('```\n' + lines.join('\n') + '\n```');
   return embed;
 }
 
