@@ -379,24 +379,26 @@ function buildLevelLeaderboardEmbed(guildId) {
   }
 
   const medals = ['🥇', '🥈', '🥉'];
-  embed.addFields(leaderboard.map((row, index) => {
+  const nameWidth = 18;
+  const memberWidth = nameWidth + 3;
+  const lines = leaderboard.map((row, index) => {
     const memberName = guild?.members.cache.get(row.user_id)?.displayName
       || client.users.cache.get(row.user_id)?.username
       || `Member ${row.user_id.slice(-4)}`;
-    const safeName = memberName
-      .replace(/\s+/g, ' ')
-      .replace(/([*_~`|>])/g, match => `\\${match}`);
+    const safeName = memberName.replace(/[\s`]/g, ' ');
     const nameChars = Array.from(safeName);
-    const displayName = nameChars.length > 26
-      ? `${nameChars.slice(0, 23).join('')}...`
+    const displayName = nameChars.length > nameWidth
+      ? `${nameChars.slice(0, nameWidth - 1).join('')}…`
       : safeName;
+    const paddedName = displayName.padEnd(nameWidth, ' ');
+    const rank = medals[index] ? `${medals[index]} ` : `${index + 1}.`.padEnd(3, ' ');
+    const level = `Lv ${String(row.level).padStart(3)}`;
+    const totalXp = `${row.total_xp.toLocaleString().padStart(8)} XP`;
 
-    return {
-      name: `${medals[index] || `#${index + 1}`}  ${displayName}`,
-      value: `Level **${row.level}**  ·  **${row.total_xp.toLocaleString()} XP**`,
-      inline: false,
-    };
-  }));
+    return `${rank}${paddedName}  ${level}  ${totalXp}`;
+  });
+  const header = `${'MEMBER'.padEnd(memberWidth)}  ${'LEVEL'.padStart(6)}  ${'TOTAL XP'.padStart(11)}`;
+  embed.setDescription(`\`\`\`text\n${header}\n${lines.join('\n')}\n\`\`\``);
   return embed;
 }
 
