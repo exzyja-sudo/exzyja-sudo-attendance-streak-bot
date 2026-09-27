@@ -77,7 +77,9 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS level_settings (
     guild_id TEXT PRIMARY KEY,
-    announcement_channel_id TEXT NOT NULL
+    announcement_channel_id TEXT NOT NULL,
+    leaderboard_channel_id TEXT,
+    leaderboard_message_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS level_badge_roles (
@@ -194,6 +196,8 @@ ensureColumn('config', 'role_automation_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'absence_days', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('streaks', 'last_absence_date', 'TEXT');
 ensureColumn('polls', 'access_role_id', 'TEXT');
+ensureColumn('level_settings', 'leaderboard_channel_id', 'TEXT');
+ensureColumn('level_settings', 'leaderboard_message_id', 'TEXT');
 ensureColumn('user_levels', 'progression_version', 'INTEGER NOT NULL DEFAULT 1');
 db.prepare(`
   UPDATE user_levels
@@ -339,6 +343,21 @@ function setLevelAnnouncementChannel(guildId, channelId) {
 function getLevelAnnouncementChannel(guildId) {
   return db.prepare('SELECT announcement_channel_id FROM level_settings WHERE guild_id = ?')
     .get(guildId)?.announcement_channel_id || null;
+}
+
+function setLevelLeaderboard(guildId, channelId, messageId = null) {
+  db.prepare(`
+    INSERT INTO level_settings (guild_id, announcement_channel_id, leaderboard_channel_id, leaderboard_message_id)
+    VALUES (?, COALESCE((SELECT announcement_channel_id FROM level_settings WHERE guild_id = ?), ''), ?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET
+      leaderboard_channel_id = excluded.leaderboard_channel_id,
+      leaderboard_message_id = excluded.leaderboard_message_id
+  `).run(guildId, guildId, channelId, messageId);
+}
+
+function getLevelLeaderboardMessage(guildId) {
+  return db.prepare('SELECT leaderboard_channel_id, leaderboard_message_id FROM level_settings WHERE guild_id = ?')
+    .get(guildId) || null;
 }
 
 function getLevelBadgeRoleId(guildId, level) {
@@ -752,6 +771,8 @@ module.exports = {
   getLevelLeaderboard,
   setLevelAnnouncementChannel,
   getLevelAnnouncementChannel,
+  setLevelLeaderboard,
+  getLevelLeaderboardMessage,
   getLevelBadgeRoleId,
   setLevelBadgeRole,
   getLevelBadgeRoles,

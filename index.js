@@ -362,8 +362,54 @@ async function sendLevelUpAnnouncement(guildId, user, result, xpAdded, fallbackC
 // guildId -> node-cron task, so we can reschedule after /setup-attendance
 const scheduledTasks = new Map();
 const attendanceRefreshQueues = new Map();
+const levelLeaderboardQueues = new Map();
 let scheduledAnnouncementTask;
 let pollTask;
+
+function buildLevelLeaderboardEmbed(guildId) {
+  const leaderboard = db.getLevelLeaderboard(guildId);
+  const description = leaderboard.length
+    ? leaderboard.map((row, index) => `**${index + 1}.** <@${row.user_id}> — Level **${row.level}** (${row.total_xp} XP)`).join('\n')
+    : 'No one has earned XP yet. Send a message to get started!';
+  return new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle('Level Leaderboard')
+    .setDescription(description);
+}
+
+async function refreshLevelLeaderboard(guildId) {
+  const previousRefresh = levelLeaderboardQueues.get(guildId) || Promise.resolve();
+  const refresh = previousRefresh.catch(() => {}).then(async () => {
+    const settings = db.getLevelLeaderboardMessage(guildId);
+    if (!settings?.leaderboard_channel_id) return false;
+
+    const channel = await client.channels.fetch(settings.leaderboard_channel_id).catch(() => null);
+    if (!channel?.isTextBased()) return false;
+
+    const payload = { embeds: [buildLevelLeaderboardEmbed(guildId)] };
+    let message = settings.leaderboard_message_id
+      ? await channel.messages.fetch(settings.leaderboard_message_id).catch(() => null)
+      : null;
+    try {
+      if (message) {
+        await message.edit(payload);
+      } else {
+        message = await channel.send(payload);
+        db.setLevelLeaderboard(guildId, channel.id, message.id);
+      }
+      return true;
+    } catch (error) {
+      console.error(`[level] Failed to refresh leaderboard for guild ${guildId}:`, error.message);
+      return false;
+    }
+  });
+  levelLeaderboardQueues.set(guildId, refresh);
+  try {
+    return await refresh;
+  } finally {
+    if (levelLeaderboardQueues.get(guildId) === refresh) levelLeaderboardQueues.delete(guildId);
+  }
+}
 
 function parseExemptionRoleIds(value) {
   if (!value) return [];
@@ -775,7 +821,9 @@ client.on(Events.MessageCreate, async message => {
     const amount = 15 + Math.floor(Math.random() * 11);
     const result = db.awardMessageXp(message.guildId, message.author.id, amount, MESSAGE_XP_COOLDOWN_MS);
     await syncLevelNickname(message.member, result.level, db);
-    if (!result.awarded || result.level === result.previous_level) return;
+    if (!result.awarded) return;
+    await refreshLevelLeaderboard(message.guildId);
+    if (result.level === result.previous_level) return;
     await sendLevelUpAnnouncement(message.guildId, message.author, result, amount, message.channel);
   } catch (err) {
     console.error(`[level] Failed to process message XP for ${message.author.id}:`, err.message);
@@ -806,7 +854,7 @@ client.on(Events.InteractionCreate, async interaction => {
             '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Reacting to another member’s message adds 3 XP each time; self-reactions and bot reactions do not count.',
             '**Level requirements:** 100 XP to reach Level 2, then the next level takes 10 more XP than the previous one (110, 120, and so on).',
             '**Level display:** Managers can use `/level-nickname enabled:true` to add a star and level number to server nicknames. It is off by default and needs Manage Nicknames permission.',
-            '**`/level`** View your level, or choose a member. **`/level-leaderboard`** Show the top members by XP.',
+            '**`/level`** View your level, or choose a member. **`/level-leaderboard-config channel`** sets the public leaderboard location; `/level-leaderboard` refreshes its single post.',
             '**`/level-up user levels`** Managers can manually grant levels. The announcement color follows the new level.',
             '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
           ].join('\n\n')),
@@ -1326,15 +1374,11 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-leaderboard') {
-      const leaderboard = db.getLevelLeaderboard(interaction.guildId);
-      const description = leaderboard.length
-        ? leaderboard.map((row, index) => `**${index + 1}.** <@${row.user_id}> — Level **${row.level}** (${row.total_xp} XP)`).join('\n')
-        : 'No one has earned XP yet. Send a message to get started!';
-      const embed = new EmbedBuilder()
-        .setColor(0x57f287)
-        .setTitle('Level Leaderboard')
-        .setDescription(description);
-      return interaction.reply({ embeds: [embed] });
+      const updated = await refreshLevelLeaderboard(interaction.guildId);
+      return interaction.reply({
+        content: updated ? 'The level leaderboard has been refreshed.' : 'A manager needs to configure the leaderboard channel with `/level-leaderboard-config` first.',
+        ephemeral: true,
+      });
     }
 
     if (interaction.commandName === 'level-up') {
@@ -1347,6 +1391,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const result = db.addLevels(interaction.guildId, user.id, levels);
       const member = await interaction.guild.members.fetch(user.id).catch(() => null);
       if (member) await syncLevelNickname(member, result.level, db);
+      await refreshLevelLeaderboard(interaction.guildId);
       const configuredChannelId = db.getLevelAnnouncementChannel(interaction.guildId);
       const announcementChannel = configuredChannelId
         ? await client.channels.fetch(configuredChannelId).catch(() => null)
@@ -1399,6 +1444,43 @@ client.on(Events.InteractionCreate, async interaction => {
 
       db.setLevelAnnouncementChannel(interaction.guildId, channel.id);
       return interaction.reply({ content: `Level-up announcements will be posted in ${channel}.`, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'level-leaderboard-config') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('channel', true);
+      if (!channel.isTextBased() || channel.isThread()) {
+        return interaction.reply({ content: 'Choose a regular text channel for the level leaderboard.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const permissions = botMember && channel.permissionsFor(botMember);
+      if (!permissions?.has(PermissionFlagsBits.ViewChannel)
+        || !permissions.has(PermissionFlagsBits.SendMessages)
+        || !permissions.has(PermissionFlagsBits.EmbedLinks)) {
+        return interaction.reply({ content: 'I need View Channel, Send Messages, and Embed Links permissions in that channel.', ephemeral: true });
+      }
+
+      const currentSettings = db.getLevelLeaderboardMessage(interaction.guildId);
+      if (currentSettings?.leaderboard_channel_id && currentSettings.leaderboard_channel_id !== channel.id) {
+        const previousChannel = await client.channels.fetch(currentSettings.leaderboard_channel_id).catch(() => null);
+        if (previousChannel?.isTextBased() && currentSettings.leaderboard_message_id) {
+          const previousMessage = await previousChannel.messages.fetch(currentSettings.leaderboard_message_id).catch(() => null);
+          if (previousMessage) await previousMessage.delete().catch(() => {});
+        }
+        db.setLevelLeaderboard(interaction.guildId, channel.id);
+      } else if (!currentSettings?.leaderboard_channel_id) {
+        db.setLevelLeaderboard(interaction.guildId, channel.id);
+      }
+
+      const updated = await refreshLevelLeaderboard(interaction.guildId);
+      return interaction.reply({
+        content: updated ? `The level leaderboard is now posted in ${channel} and will update in place.` : 'I could not post the leaderboard. Check my channel permissions and try again.',
+        ephemeral: true,
+      });
     }
 
     if (interaction.commandName === 'level-nickname') {
@@ -1813,6 +1895,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
       if (result.awarded) {
         const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
         if (member) await syncLevelNickname(member, result.level, db);
+        await refreshLevelLeaderboard(guildId);
         if (result.level > result.previous_level) {
           await sendLevelUpAnnouncement(guildId, user, result, 3, reaction.message.channel);
         }

@@ -24,14 +24,27 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
         last_xp_at INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (guild_id, user_id)
       );
+      CREATE TABLE level_settings (
+        guild_id TEXT PRIMARY KEY,
+        announcement_channel_id TEXT NOT NULL
+      );
     `);
     legacyDb.prepare('INSERT INTO user_levels (guild_id, user_id, total_xp, last_xp_at) VALUES (?, ?, ?, ?)')
       .run('legacy-guild', 'legacy-user', 250, 1000);
+    legacyDb.prepare('INSERT INTO level_settings (guild_id, announcement_channel_id) VALUES (?, ?)')
+      .run('legacy-guild', 'announcement-channel');
     legacyDb.close();
 
     db = require('../db.js');
     assert.equal(db.getLevel('legacy-guild', 'legacy-user').level, 3);
     assert.equal(db.getLevel('legacy-guild', 'legacy-user').xp_into_level, 60);
+    assert.equal(db.getLevelAnnouncementChannel('legacy-guild'), 'announcement-channel');
+    db.setLevelLeaderboard('legacy-guild', 'leaderboard-channel', 'leaderboard-message');
+    assert.deepEqual(db.getLevelLeaderboardMessage('legacy-guild'), {
+      leaderboard_channel_id: 'leaderboard-channel',
+      leaderboard_message_id: 'leaderboard-message',
+    });
+    assert.equal(db.getLevelAnnouncementChannel('legacy-guild'), 'announcement-channel');
 
     const firstAward = db.awardMessageXp('guild-a', 'user-a', 95, db.XP_COOLDOWN_MS, 100000);
     assert.equal(firstAward.total_xp, 95);
@@ -82,6 +95,17 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
     db.setLevelAnnouncementChannel('guild-a', 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
+    db.setLevelLeaderboard('guild-a', 'leaderboard-channel', 'leaderboard-message');
+    assert.deepEqual(db.getLevelLeaderboardMessage('guild-a'), {
+      leaderboard_channel_id: 'leaderboard-channel',
+      leaderboard_message_id: 'leaderboard-message',
+    });
+    db.setLevelLeaderboard('guild-a', 'leaderboard-channel', null);
+    assert.deepEqual(db.getLevelLeaderboardMessage('guild-a'), {
+      leaderboard_channel_id: 'leaderboard-channel',
+      leaderboard_message_id: null,
+    });
+    assert.equal(db.getLevelLeaderboardMessage('guild-b'), null);
     db.setLevelBadgeRole('guild-a', 6, 'role-level-6');
     db.setLevelBadgeRole('guild-a', 7, 'role-level-7');
     assert.equal(db.getLevelBadgeRoleId('guild-a', 6), 'role-level-6');

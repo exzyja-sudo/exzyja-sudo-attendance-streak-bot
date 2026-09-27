@@ -161,7 +161,15 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('level-leaderboard')
-    .setDescription('Show the server chat level leaderboard')
+    .setDescription('Refresh the configured server chat level leaderboard')
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('level-leaderboard-config')
+    .setDescription('Choose where the server level leaderboard is posted')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption(opt =>
+      opt.setName('channel').setDescription('Channel for the level leaderboard').setRequired(true))
     .toJSON(),
 
   new SlashCommandBuilder()

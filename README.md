@@ -45,8 +45,10 @@ nicknames.
   announcement cards use an accent color based on the new level and are posted
   in the message channel by default. `/level-config announcement-channel` lets a
   server manager choose a dedicated announcement channel. `/level-up user
-  levels` manually grants levels to a member; `/level` shows progress and
-  `/level-leaderboard` shows the server rankings.
+  levels` manually grants levels to a member; `/level` shows progress.
+  `/level-leaderboard-config channel` chooses where the public leaderboard is
+  posted. It keeps one message and edits it as XP changes; `/level-leaderboard`
+  manually refreshes that post.
 - When a member's streak reaches zero, the bot can remove the saved active
   access roles and add an inactive role. It saves the member's latest active
   roles when they check in, so the bot can restore them later. A configured
