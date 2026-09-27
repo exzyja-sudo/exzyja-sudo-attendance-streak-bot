@@ -368,13 +368,36 @@ let pollTask;
 
 function buildLevelLeaderboardEmbed(guildId) {
   const leaderboard = db.getLevelLeaderboard(guildId);
-  const description = leaderboard.length
-    ? leaderboard.map((row, index) => `**${index + 1}.** <@${row.user_id}> — Level **${row.level}** (${row.total_xp} XP)`).join('\n')
-    : 'No one has earned XP yet. Send a message to get started!';
-  return new EmbedBuilder()
-    .setColor(0x57f287)
+  const guild = client.guilds.cache.get(guildId);
+  const embed = new EmbedBuilder()
+    .setColor(leaderboard.length ? getLevelColor(leaderboard[0].level) : 0x57f287)
     .setTitle('Level Leaderboard')
-    .setDescription(description);
+    .setTimestamp();
+
+  if (!leaderboard.length) {
+    return embed.setDescription('No one has earned XP yet. Send a message to get started!');
+  }
+
+  const medals = ['🥇', '🥈', '🥉'];
+  embed.addFields(leaderboard.map((row, index) => {
+    const memberName = guild?.members.cache.get(row.user_id)?.displayName
+      || client.users.cache.get(row.user_id)?.username
+      || `Member ${row.user_id.slice(-4)}`;
+    const safeName = memberName
+      .replace(/\s+/g, ' ')
+      .replace(/([*_~`|>])/g, match => `\\${match}`);
+    const nameChars = Array.from(safeName);
+    const displayName = nameChars.length > 26
+      ? `${nameChars.slice(0, 23).join('')}...`
+      : safeName;
+
+    return {
+      name: `${medals[index] || `#${index + 1}`}  ${displayName}`,
+      value: `Level **${row.level}**  ·  **${row.total_xp.toLocaleString()} XP**`,
+      inline: false,
+    };
+  }));
+  return embed;
 }
 
 async function refreshLevelLeaderboard(guildId) {
