@@ -6,13 +6,6 @@ const { version } = require('./package.json');
 const CHECK_EMOJI = '✅';
 const SHIELD_EMOJI = '🛡️';
 
-// Fixed-width name column (monospace font in ```ansi blocks) so the streak
-// and shield columns line up even when names differ a lot in length.
-// Discord nicknames/display names can be up to 32 chars, which would make
-// every other row's columns drift — so long names get truncated with an
-// ellipsis instead of stretching the column.
-const NAME_COL_WIDTH = 18;
-
 // Discord hard-caps a single embed field value at 1024 characters. A long
 // checked-in list (many people, or long names) can blow past that and get
 // silently cut off. FIELD_CHAR_BUDGET leaves headroom for the ```ansi fence
@@ -27,27 +20,19 @@ function hasExemptionRole(member, exemptionRoleIds) {
   return roleIds.some(roleId => member.roles.cache.has(roleId));
 }
 
-function padName(name) {
-  const trimmed = name.length > NAME_COL_WIDTH ? name.slice(0, NAME_COL_WIDTH - 1) + '…' : name;
-  return trimmed.padEnd(NAME_COL_WIDTH, ' ');
-}
-
 /**
- * Renders one line of the live checked-in list: name (padded to a fixed
- * column), fire icon + streak (colored by tier via a ```ansi code block —
- * desktop/web only, Discord doesn't support colored text on mobile), and
- * shields remaining. The streak number is right-padded too so a 3-digit
- * streak and a 1-digit streak still line up.
+ * Renders one line of the live checked-in list. Delimiters make the three
+ * values readable without relying on Discord to measure emoji and nickname
+ * suffixes consistently in a monospace code block.
  */
 function renderCheckinLine({ name, streak, shieldsLeft }) {
   const tier = getStreakTier(streak);
   const fire = getFireIcon(tier);
-  const namePart = padName(name);
   const streakPart = streak > 0
-    ? `${tier.ansi}${fire} ${String(streak).padStart(3, ' ')}${ANSI_RESET}`
-    : ' '.repeat(6);
-  const shieldPart = streak > 0 ? `   ${SHIELD_EMOJI} ${shieldsLeft}` : '';
-  return `${namePart} ${streakPart}${shieldPart}`;
+    ? `${tier.ansi}${fire} ${streak}${ANSI_RESET}`
+    : `${tier.ansi}${fire} 0${ANSI_RESET}`;
+  const shieldPart = streak > 0 ? `${SHIELD_EMOJI} ${shieldsLeft}` : `${SHIELD_EMOJI} -`;
+  return `${name}  |  ${streakPart}  |  ${shieldPart}`;
 }
 
 /**
