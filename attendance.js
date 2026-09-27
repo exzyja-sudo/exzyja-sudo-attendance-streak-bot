@@ -25,11 +25,15 @@ function hasExemptionRole(member, exemptionRoleIds) {
 }
 
 /**
- * Removes the level badge from attendance names before applying the fixed
- * width, since the star emoji has a variable display width in Discord.
+ * Removes managed level badges from attendance names before applying the
+ * fixed width, since they are not part of the attendance display.
  */
 function padName(name) {
-  const cleanName = name.replace(/⭐/gu, '').replace(/\s+/g, ' ').trim();
+  const cleanName = name
+    .replace(/\s+(?:Lvl\s+(?:\d+|[⁰¹²³⁴⁵⁶⁷⁸⁹]+)|ʟᴠʟ\s+[⁰¹²³⁴⁵⁶⁷⁸⁹]+|⭐\s*\d+)$/u, '')
+    .replace(/⭐/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const trimmed = cleanName.length > NAME_COL_WIDTH
     ? cleanName.slice(0, NAME_COL_WIDTH - 1) + '…'
     : cleanName;
