@@ -379,13 +379,18 @@ async function buildLevelLeaderboardEmbed(guildId) {
   }
 
   const medals = ['🥇', '🥈', '🥉'];
+  const levelColumnWidth = 25;
   const lines = await Promise.all(leaderboard.map(async (row, index) => {
     const member = guild?.members.cache.get(row.user_id)
       || (guild ? await guild.members.fetch(row.user_id).catch(() => null) : null);
     const user = member?.user
       || client.users.cache.get(row.user_id)
       || await client.users.fetch(row.user_id).catch(() => null);
-    const memberName = member?.displayName
+    const savedNickname = db.getLevelNickname(guildId, row.user_id);
+    const currentDisplayName = member?.displayName;
+    const memberName = savedNickname?.managed_nickname === currentDisplayName
+      ? savedNickname.base_name
+      : currentDisplayName
       || user?.globalName
       || user?.username
       || `Member ${row.user_id.slice(-4)}`;
@@ -394,12 +399,13 @@ async function buildLevelLeaderboardEmbed(guildId) {
       .replace(/\s+/g, ' ')
       .replace(/([*_~|>])/g, '\\$1');
     const nameChars = Array.from(safeName);
-    const displayName = nameChars.length > 25
-      ? `${nameChars.slice(0, 24).join('')}…`
+    const displayName = nameChars.length > 20
+      ? `${nameChars.slice(0, 19).join('')}…`
       : safeName;
-    const rank = medals[index] || '⭐';
-    const place = medals[index] ? '' : `**${index + 1}.** `;
-    return `${rank}  ${place}**${displayName}**  ·  ✨ Level **${row.level}**`;
+    const rank = medals[index] ? `${medals[index]} ` : `⭐ ${index + 1}. `;
+    const spacerLength = Math.max(2, levelColumnWidth - Array.from(rank + displayName).length);
+    const spacer = '\u2002'.repeat(spacerLength);
+    return `${rank}**${displayName}**${spacer}✨ **Level ${row.level}**`;
   }));
   embed.setDescription(lines.join('\n'));
   return embed;
