@@ -366,12 +366,12 @@ const levelLeaderboardQueues = new Map();
 let scheduledAnnouncementTask;
 let pollTask;
 
-function buildLevelLeaderboardEmbed(guildId) {
-  const leaderboard = db.getLevelLeaderboard(guildId);
+async function buildLevelLeaderboardEmbed(guildId) {
+  const leaderboard = db.getLevelLeaderboard(guildId, 25);
   const guild = client.guilds.cache.get(guildId);
   const embed = new EmbedBuilder()
     .setColor(leaderboard.length ? getLevelColor(leaderboard[0].level) : 0x57f287)
-    .setTitle('Level Leaderboard')
+    .setTitle('🌟 Level Leaderboard 🌟')
     .setTimestamp();
 
   if (!leaderboard.length) {
@@ -379,26 +379,29 @@ function buildLevelLeaderboardEmbed(guildId) {
   }
 
   const medals = ['🥇', '🥈', '🥉'];
-  const nameWidth = 18;
-  const memberWidth = nameWidth + 3;
-  const lines = leaderboard.map((row, index) => {
-    const memberName = guild?.members.cache.get(row.user_id)?.displayName
-      || client.users.cache.get(row.user_id)?.username
+  const lines = await Promise.all(leaderboard.map(async (row, index) => {
+    const member = guild?.members.cache.get(row.user_id)
+      || (guild ? await guild.members.fetch(row.user_id).catch(() => null) : null);
+    const user = member?.user
+      || client.users.cache.get(row.user_id)
+      || await client.users.fetch(row.user_id).catch(() => null);
+    const memberName = member?.displayName
+      || user?.globalName
+      || user?.username
       || `Member ${row.user_id.slice(-4)}`;
-    const safeName = memberName.replace(/[\s`]/g, ' ');
+    const safeName = memberName
+      .replace(/[\r\n`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/([*_~|>])/g, '\\$1');
     const nameChars = Array.from(safeName);
-    const displayName = nameChars.length > nameWidth
-      ? `${nameChars.slice(0, nameWidth - 1).join('')}…`
+    const displayName = nameChars.length > 25
+      ? `${nameChars.slice(0, 24).join('')}…`
       : safeName;
-    const paddedName = displayName.padEnd(nameWidth, ' ');
-    const rank = medals[index] ? `${medals[index]} ` : `${index + 1}.`.padEnd(3, ' ');
-    const level = `Lv ${String(row.level).padStart(3)}`;
-    const totalXp = `${row.total_xp.toLocaleString().padStart(8)} XP`;
-
-    return `${rank}${paddedName}  ${level}  ${totalXp}`;
-  });
-  const header = `${'MEMBER'.padEnd(memberWidth)}  ${'LEVEL'.padStart(6)}  ${'TOTAL XP'.padStart(11)}`;
-  embed.setDescription(`\`\`\`text\n${header}\n${lines.join('\n')}\n\`\`\``);
+    const rank = medals[index] || '⭐';
+    const place = medals[index] ? '' : `**${index + 1}.** `;
+    return `${rank}  ${place}**${displayName}**  ·  ✨ Level **${row.level}**`;
+  }));
+  embed.setDescription(lines.join('\n'));
   return embed;
 }
 
@@ -411,7 +414,7 @@ async function refreshLevelLeaderboard(guildId) {
     const channel = await client.channels.fetch(settings.leaderboard_channel_id).catch(() => null);
     if (!channel?.isTextBased()) return false;
 
-    const payload = { embeds: [buildLevelLeaderboardEmbed(guildId)] };
+    const payload = { embeds: [await buildLevelLeaderboardEmbed(guildId)] };
     let message = settings.leaderboard_message_id
       ? await channel.messages.fetch(settings.leaderboard_message_id).catch(() => null)
       : null;
