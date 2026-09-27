@@ -60,6 +60,7 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
     db.awardMessageXp('guild-a', 'user-d', 98, db.XP_COOLDOWN_MS, 100000);
     const reactionAward = db.awardReactionXp('guild-a', 'user-d');
     assert.equal(reactionAward.total_xp, 101);
+    assert.equal(reactionAward.user_id, 'user-d');
     assert.equal(reactionAward.previous_level, 1);
     assert.equal(reactionAward.level, 2);
     const repeatedReaction = db.awardReactionXp('guild-a', 'user-d');

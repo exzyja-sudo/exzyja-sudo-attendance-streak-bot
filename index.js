@@ -796,15 +796,16 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/post-attendance-now`** Post today’s check-in message immediately.',
             '**Daily check-in:** React ✅ to the current attendance post. Only that post counts; each successful check-in updates your consecutive-day streak.',
             '**Shields:** Members get up to 3 per month. A shield covers one missed day, but not two missed days in a row.',
+            '**Streak reset:** Missing a second day in a row, or missing a day with no shields left, resets your streak to 0. Shields refill monthly.',
             '**`/streaks`** Show the server streak leaderboard. **`/my-streak`** privately show your streak and shields.',
           ].join('\n\n')),
         new EmbedBuilder()
           .setColor(0x2ecc71)
           .setTitle('Levels')
           .setDescription([
-            '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Another member reacting to your message adds 3 XP each time; self-reactions and bot reactions do not count.',
+            '**Chat XP:** Earn 15–25 XP from a message, once per 5 minutes. Reacting to another member’s message adds 3 XP each time; self-reactions and bot reactions do not count.',
             '**Level requirements:** 100 XP to reach Level 2, then the next level takes 10 more XP than the previous one (110, 120, and so on).',
-            '**Level display:** Managers can use `/level-nickname enabled:true` to add a small `ʟᴠʟ` and superscript number to server nicknames. It is off by default and needs Manage Nicknames permission.',
+            '**Level display:** Managers can use `/level-nickname enabled:true` to add a star and level number to server nicknames. It is off by default and needs Manage Nicknames permission.',
             '**`/level`** View your level, or choose a member. **`/level-leaderboard`** Show the top members by XP.',
             '**`/level-up user levels`** Managers can manually grant levels. The announcement color follows the new level.',
             '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
@@ -1808,12 +1809,12 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 
     const author = reaction.message.author;
     if (author && !author.bot && !reaction.message.webhookId && author.id !== user.id) {
-      const result = db.awardReactionXp(guildId, author.id, 3);
+      const result = db.awardReactionXp(guildId, user.id, 3);
       if (result.awarded) {
-        const member = await reaction.message.guild.members.fetch(author.id).catch(() => null);
+        const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
         if (member) await syncLevelNickname(member, result.level, db);
         if (result.level > result.previous_level) {
-          await sendLevelUpAnnouncement(guildId, author, result, 3, reaction.message.channel);
+          await sendLevelUpAnnouncement(guildId, user, result, 3, reaction.message.channel);
         }
       }
     }

@@ -1,12 +1,10 @@
 const { PermissionFlagsBits } = require('discord.js');
 
 const MAX_NICKNAME_LENGTH = 32;
-const SUPERSCRIPT_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 const lastWarningAt = new Map();
 
 function buildLevelNickname(baseName, level) {
-  const smallLevel = String(level).replace(/\d/g, digit => SUPERSCRIPT_DIGITS[Number(digit)]);
-  const suffix = `ʟᴠʟ ${smallLevel}`;
+  const suffix = `⭐ ${level}`;
   const maxBaseLength = MAX_NICKNAME_LENGTH - suffix.length - 1;
   const trimmedBase = Array.from(String(baseName || 'Member').trim())
     .slice(0, Math.max(1, maxBaseLength))
@@ -46,7 +44,7 @@ async function syncLevelNickname(member, level, database) {
       baseName = previous.base_name;
     } else {
       baseName = currentName
-        .replace(/\s+(?:Lvl \d+|ʟᴠʟ [⁰¹²³⁴⁵⁶⁷⁸⁹]+)$/u, '')
+        .replace(/\s+(?:Lvl \d+|ʟᴠʟ [⁰¹²³⁴⁵⁶⁷⁸⁹]+|⭐ \d+)$/u, '')
         .trimEnd() || member.user.username;
     }
 

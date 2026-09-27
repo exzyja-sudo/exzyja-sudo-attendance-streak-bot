@@ -32,11 +32,11 @@ nicknames.
   Managers can use `/close-meetme user` to remove the role and end the
   assignment early.
 - Members earn 15–25 chat XP for a message, with a 5-minute per-member
-  message cooldown. Another member's reaction adds 3 XP to the message author
-  with no cooldown; self-reactions and bot reactions do not count.
+  message cooldown. Reacting to another member's message adds 3 XP to the
+  reactor with no cooldown; self-reactions and bot reactions do not count.
   A server manager can opt in to appending `Lvl N` to member nicknames with
   `/level-nickname enabled:true`; it is off by default. The existing nickname
-  is preserved as the base (for example, `Alex ʟᴠʟ ⁶`). Members are updated
+  is preserved as the base (for example, `Alex ⭐ 6`). Members are updated
   the next time they earn XP. Disabling it stops future changes but leaves
   current nicknames as-is. The bot needs Manage Nicknames and must be above
   each member in the role hierarchy.

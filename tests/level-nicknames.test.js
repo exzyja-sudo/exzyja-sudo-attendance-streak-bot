@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { buildLevelNickname, syncLevelNickname } = require('../level-nicknames');
 
 test('level nickname appends exact level and stays within Discord length limit', () => {
-  assert.equal(buildLevelNickname('Alex', 6), 'Alex ʟᴠʟ ⁶');
-  assert.equal(buildLevelNickname('A'.repeat(40), 123), `${'A'.repeat(24)} ʟᴠʟ ¹²³`);
+  assert.equal(buildLevelNickname('Alex', 6), 'Alex ⭐ 6');
+  assert.equal(buildLevelNickname('A'.repeat(40), 123), `${'A'.repeat(26)} ⭐ 123`);
   assert.ok(Array.from(buildLevelNickname('名'.repeat(40), 99)).length <= 32);
 });
 
@@ -41,20 +41,20 @@ test('nickname sync preserves the base name, follows level changes, and removes 
   };
 
   assert.equal(await syncLevelNickname(member, 6, database), true);
-  assert.equal(member.nickname, 'Alex ʟᴠʟ ⁶');
+  assert.equal(member.nickname, 'Alex ⭐ 6');
   assert.deepEqual(nicknameRows.get('guild-a:member-a'), {
     base_name: 'Alex',
-    managed_nickname: 'Alex ʟᴠʟ ⁶',
+    managed_nickname: 'Alex ⭐ 6',
   });
   assert.equal(memberRoleIds.has('old-level-role'), false);
 
   assert.equal(await syncLevelNickname(member, 7, database), true);
-  assert.equal(member.nickname, 'Alex ʟᴠʟ ⁷');
+  assert.equal(member.nickname, 'Alex ⭐ 7');
 
-  member.nickname = 'Captain ʟᴠʟ ⁷';
+  member.nickname = 'Captain ⭐ 7';
   member.displayName = member.nickname;
   assert.equal(await syncLevelNickname(member, 8, database), true);
-  assert.equal(member.nickname, 'Captain ʟᴠʟ ⁸');
+  assert.equal(member.nickname, 'Captain ⭐ 8');
 });
 
 test('nickname sync does nothing unless enabled for the guild', async () => {
