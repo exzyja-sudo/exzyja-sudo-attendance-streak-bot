@@ -6,6 +6,10 @@ const { version } = require('./package.json');
 const CHECK_EMOJI = '✅';
 const SHIELD_EMOJI = '🛡️';
 
+// Fixed-width name column (monospace font in ```ansi blocks) so the streak
+// and shield columns line up even when names differ a lot in length.
+const NAME_COL_WIDTH = 18;
+
 // Discord hard-caps a single embed field value at 1024 characters. A long
 // checked-in list (many people, or long names) can blow past that and get
 // silently cut off. FIELD_CHAR_BUDGET leaves headroom for the ```ansi fence
@@ -21,18 +25,26 @@ function hasExemptionRole(member, exemptionRoleIds) {
 }
 
 /**
- * Renders one line of the live checked-in list. Delimiters make the three
- * values readable without relying on Discord to measure emoji and nickname
- * suffixes consistently in a monospace code block.
+ * Removes the level badge from attendance names before applying the fixed
+ * width, since the star emoji has a variable display width in Discord.
  */
+function padName(name) {
+  const cleanName = name.replace(/⭐/gu, '').replace(/\s+/g, ' ').trim();
+  const trimmed = cleanName.length > NAME_COL_WIDTH
+    ? cleanName.slice(0, NAME_COL_WIDTH - 1) + '…'
+    : cleanName;
+  return trimmed.padEnd(NAME_COL_WIDTH, ' ');
+}
+
 function renderCheckinLine({ name, streak, shieldsLeft }) {
   const tier = getStreakTier(streak);
   const fire = getFireIcon(tier);
+  const namePart = padName(name);
   const streakPart = streak > 0
-    ? `${tier.ansi}${fire} ${streak}${ANSI_RESET}`
-    : `${tier.ansi}${fire} 0${ANSI_RESET}`;
-  const shieldPart = streak > 0 ? `${SHIELD_EMOJI} ${shieldsLeft}` : `${SHIELD_EMOJI} -`;
-  return `${name}  |  ${streakPart}  |  ${shieldPart}`;
+    ? `${tier.ansi}${fire} ${String(streak).padStart(3, ' ')}${ANSI_RESET}`
+    : ' '.repeat(6);
+  const shieldPart = streak > 0 ? `   ${SHIELD_EMOJI} ${shieldsLeft}` : '';
+  return `${namePart} ${streakPart}${shieldPart}`;
 }
 
 /**
