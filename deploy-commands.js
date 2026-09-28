@@ -80,12 +80,30 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('accept')
-    .setDescription('Replace a member’s roles with the selected role and welcome them')
+    .setDescription('Replace members’ roles with the selected role and welcome them')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addUserOption(opt =>
-      opt.setName('user').setDescription('Member to accept').setRequired(true))
+      opt.setName('user').setDescription('First member to accept').setRequired(true))
     .addRoleOption(opt =>
       opt.setName('role').setDescription('Role to assign to the member').setRequired(true))
+    .addUserOption(opt =>
+      opt.setName('user-2').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-3').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-4').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-5').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-6').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-7').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-8').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-9').setDescription('Additional member to accept').setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user-10').setDescription('Additional member to accept').setRequired(false))
     .toJSON(),
 
   new SlashCommandBuilder()
