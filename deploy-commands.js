@@ -79,6 +79,16 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('accept')
+    .setDescription('Replace a member’s roles with the selected role and welcome them')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member to accept').setRequired(true))
+    .addRoleOption(opt =>
+      opt.setName('role').setDescription('Role to assign to the member').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('schedule-announcement')
     .setDescription('Schedule a future or yearly announcement')
     .addChannelOption(opt =>

@@ -899,6 +899,7 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/announcement`** Post a titled announcement; members react to confirm they have read it.',
             '**`/schedule-announcement`** Schedule a general or birthday announcement for a date, time, and timezone. Choose once, daily, weekly, or yearly recurrence.',
             '**`/birthday user`** Managers post a birthday greeting in the configured announcement channel.',
+            '**`/accept user role`** Managers replace a member’s assignable roles with the selected role and post a welcome in the configured announcement channel.',
             '**`/poll`** Create a two-option reaction poll, set an outcome channel, access role, and duration (up to 7 days). The bot announces the result when it closes.',
             '**`/close-poll poll-id`** Close an active poll early and announce its current result.',
           ].join('\n\n')),
@@ -1151,6 +1152,94 @@ client.on(Events.InteractionCreate, async interaction => {
         content: `✅ Announcement posted in ${channel}. Everyone was mentioned and the ✅ reaction has already been added.`,
         ephemeral: true,
       });
+    }
+
+    if (interaction.commandName === 'accept') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const config = db.getConfig(interaction.guildId);
+      if (!config?.announcement_channel_id) {
+        return interaction.reply({ content: 'Set an announcement channel first using `/setup-attendance`.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const role = interaction.options.getRole('role', true);
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      if (!member) {
+        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
+      }
+      if (role.id === interaction.guild.id || role.managed) {
+        return interaction.reply({ content: 'Choose a normal, assignable server role.', ephemeral: true });
+      }
+      if (!announcementChannel?.isTextBased() || announcementChannel.isThread()) {
+        return interaction.reply({ content: 'The configured announcement channel could not be found.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply({ content: 'I need the Manage Roles permission to replace member roles.', ephemeral: true });
+      }
+      if (member.roles.highest.position >= botMember.roles.highest.position) {
+        return interaction.reply({ content: `Move my highest role above ${member}'s highest role before using /accept.`, ephemeral: true });
+      }
+      if (role.position >= botMember.roles.highest.position) {
+        return interaction.reply({ content: `Move my highest role above ${role} before using /accept.`, ephemeral: true });
+      }
+
+      const rolesToRemove = member.roles.cache.filter(existingRole =>
+        existingRole.id !== interaction.guild.id && !existingRole.managed && existingRole.id !== role.id
+      );
+      if ([...rolesToRemove.values()].some(existingRole => existingRole.position >= botMember.roles.highest.position)) {
+        return interaction.reply({ content: 'I cannot remove one or more of this member’s roles because they are at or above my highest role.', ephemeral: true });
+      }
+
+      try {
+        await member.roles.add(role, `Accepted by ${interaction.user.tag}`);
+        if (rolesToRemove.size > 0) {
+          await member.roles.remove(rolesToRemove, `Replaced by ${role.name} via /accept`);
+        }
+      } catch (error) {
+        console.error(`[accept] Failed to replace roles for ${member.id}:`, error);
+        return interaction.reply({ content: 'I could not update that member’s roles. Check my role permissions and hierarchy.', ephemeral: true });
+      }
+
+      const welcomeMessage = [
+        '🎴 **WELCOME ABOARD!** 🎴',
+        '',
+        `Welcome to **The Fool Family**, ${member}! 🃏`,
+        '',
+        'Please take some time to explore the server and check out the important channels below:',
+        '',
+        '🔥 Participate in <#1534603072658215123> **daily**. If your attendance streak reaches **0**, your access will be removed.',
+        '',
+        '📢 All <#1514873064117108806> will be posted here.',
+        '',
+        '💬 Stay active in DC and interact with other players. You may earn <#1553309964783853568>!',
+        '',
+        '🗣️ If you have any <#1522203508483293387>, post them here.',
+        '',
+        '📖 Please review <#1514600260209741874>.',
+        '',
+        '⚠️ **MOST IMPORTANT:** Read and follow <#1516306080743952485>.',
+        '',
+        'Don’t be a stranger!',
+        'Have a great day, and **welcome to The Fool Family!** 🃏',
+      ].join('\n');
+
+      try {
+        await announcementChannel.send({
+          content: welcomeMessage,
+          allowedMentions: { users: [member.id] },
+        });
+      } catch (error) {
+        console.error(`[accept] Failed to announce accepted member ${member.id}:`, error);
+        return interaction.reply({ content: `✅ Assigned ${role} to ${member} and replaced their previous roles, but I could not post in ${announcementChannel}.`, ephemeral: true });
+      }
+
+      return interaction.reply({ content: `✅ Assigned ${role} to ${member}, replaced their previous roles, and posted the welcome in ${announcementChannel}.`, ephemeral: true });
     }
 
     if (interaction.commandName === 'poll') {
