@@ -89,6 +89,14 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('accept-config')
+    .setDescription('Choose where /accept welcome announcements are posted')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption(opt =>
+      opt.setName('announcement-channel').setDescription('Channel for acceptance welcome messages').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('schedule-announcement')
     .setDescription('Schedule a future or yearly announcement')
     .addChannelOption(opt =>

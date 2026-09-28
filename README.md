@@ -31,10 +31,11 @@ nicknames.
 - `/meetme user` gives a member the configured MeetMe role for 20 minutes.
   Managers can use `/close-meetme user` to remove the role and end the
   assignment early.
-- `/accept user role` replaces a member’s non-managed roles with the selected
-  role and posts the welcome message in the announcement channel configured by
-  `/setup-attendance`. The bot needs Manage Roles and must be above the member
-  and affected roles in the role hierarchy.
+- `/accept-config announcement-channel` chooses the channel for acceptance
+  welcome messages. `/accept user role` replaces a member’s non-managed roles
+  with the selected role, posts the welcome message, and adds a ❤️ reaction.
+  The bot needs Manage Roles and must be above the member and affected roles in
+  the role hierarchy.
 - Members earn 15–25 chat XP for a message, with a 5-minute per-member
   message cooldown. Reacting to another member's message adds 3 XP to the
   reactor with no cooldown; self-reactions and bot reactions do not count.

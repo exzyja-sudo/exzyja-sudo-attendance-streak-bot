@@ -95,6 +95,9 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
     db.setLevelAnnouncementChannel('guild-a', 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
+    db.setAcceptAnnouncementChannel('guild-a', 'accept-channel');
+    assert.equal(db.getAcceptAnnouncementChannel('guild-a'), 'accept-channel');
+    assert.equal(db.getAcceptAnnouncementChannel('guild-b'), null);
     db.setLevelLeaderboard('guild-a', 'leaderboard-channel', 'leaderboard-message');
     assert.deepEqual(db.getLevelLeaderboardMessage('guild-a'), {
       leaderboard_channel_id: 'leaderboard-channel',

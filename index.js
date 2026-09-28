@@ -899,7 +899,8 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/announcement`** Post a titled announcement; members react to confirm they have read it.',
             '**`/schedule-announcement`** Schedule a general or birthday announcement for a date, time, and timezone. Choose once, daily, weekly, or yearly recurrence.',
             '**`/birthday user`** Managers post a birthday greeting in the configured announcement channel.',
-            '**`/accept user role`** Managers replace a member’s assignable roles with the selected role and post a welcome in the configured announcement channel.',
+            '**`/accept-config announcement-channel`** Managers choose where acceptance welcomes are posted.',
+            '**`/accept user role`** Managers replace a member’s assignable roles with the selected role and post a welcome in the configured acceptance channel.',
             '**`/poll`** Create a two-option reaction poll, set an outcome channel, access role, and duration (up to 7 days). The bot announces the result when it closes.',
             '**`/close-poll poll-id`** Close an active poll early and announce its current result.',
           ].join('\n\n')),
@@ -1159,15 +1160,15 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
-      const config = db.getConfig(interaction.guildId);
-      if (!config?.announcement_channel_id) {
-        return interaction.reply({ content: 'Set an announcement channel first using `/setup-attendance`.', ephemeral: true });
+      const announcementChannelId = db.getAcceptAnnouncementChannel(interaction.guildId);
+      if (!announcementChannelId) {
+        return interaction.reply({ content: 'Set an acceptance announcement channel first using `/accept-config`.', ephemeral: true });
       }
 
       const user = interaction.options.getUser('user', true);
       const role = interaction.options.getRole('role', true);
       const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      const announcementChannel = await client.channels.fetch(announcementChannelId).catch(() => null);
       if (!member) {
         return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
       }
@@ -1225,21 +1226,47 @@ client.on(Events.InteractionCreate, async interaction => {
         '',
         '⚠️ **MOST IMPORTANT:** Read and follow <#1516306080743952485>.',
         '',
-        'Don’t be a stranger!',
-        'Have a great day, and **welcome to The Fool Family!** 🃏',
+        'Once you\'ve read everything, react with ❤️ so we know you\'re all set!',
+        '',
+        'We\'re glad you\'re here — make yourself at home!',
+        '',
+        'Enjoy your stay, and don\'t be a stranger 👋',
       ].join('\n');
 
       try {
-        await announcementChannel.send({
+        const welcomePost = await announcementChannel.send({
           content: welcomeMessage,
           allowedMentions: { users: [member.id] },
         });
+        await welcomePost.react('❤️');
       } catch (error) {
         console.error(`[accept] Failed to announce accepted member ${member.id}:`, error);
-        return interaction.reply({ content: `✅ Assigned ${role} to ${member} and replaced their previous roles, but I could not post in ${announcementChannel}.`, ephemeral: true });
+        return interaction.reply({ content: `✅ Assigned ${role} to ${member} and replaced their previous roles, but I could not complete the welcome post and ❤️ reaction in ${announcementChannel}.`, ephemeral: true });
       }
 
       return interaction.reply({ content: `✅ Assigned ${role} to ${member}, replaced their previous roles, and posted the welcome in ${announcementChannel}.`, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'accept-config') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const channel = interaction.options.getChannel('announcement-channel', true);
+      if (!channel.isTextBased() || channel.isThread()) {
+        return interaction.reply({ content: 'Choose a regular text channel for acceptance announcements.', ephemeral: true });
+      }
+
+      const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
+      const permissions = botMember && channel.permissionsFor(botMember);
+      if (!permissions?.has(PermissionFlagsBits.ViewChannel)
+        || !permissions.has(PermissionFlagsBits.SendMessages)
+        || !permissions.has(PermissionFlagsBits.AddReactions)) {
+        return interaction.reply({ content: 'I need View Channel, Send Messages, and Add Reactions permissions in that channel.', ephemeral: true });
+      }
+
+      db.setAcceptAnnouncementChannel(interaction.guildId, channel.id);
+      return interaction.reply({ content: `Acceptance announcements will be posted in ${channel}.`, ephemeral: true });
     }
 
     if (interaction.commandName === 'poll') {

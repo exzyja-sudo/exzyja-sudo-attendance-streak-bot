@@ -82,6 +82,11 @@ db.exec(`
     leaderboard_message_id TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS accept_settings (
+    guild_id TEXT PRIMARY KEY,
+    announcement_channel_id TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS level_badge_roles (
     guild_id TEXT NOT NULL,
     level INTEGER NOT NULL,
@@ -342,6 +347,19 @@ function setLevelAnnouncementChannel(guildId, channelId) {
 
 function getLevelAnnouncementChannel(guildId) {
   return db.prepare('SELECT announcement_channel_id FROM level_settings WHERE guild_id = ?')
+    .get(guildId)?.announcement_channel_id || null;
+}
+
+function setAcceptAnnouncementChannel(guildId, channelId) {
+  db.prepare(`
+    INSERT INTO accept_settings (guild_id, announcement_channel_id)
+    VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET announcement_channel_id = excluded.announcement_channel_id
+  `).run(guildId, channelId);
+}
+
+function getAcceptAnnouncementChannel(guildId) {
+  return db.prepare('SELECT announcement_channel_id FROM accept_settings WHERE guild_id = ?')
     .get(guildId)?.announcement_channel_id || null;
 }
 
@@ -771,6 +789,8 @@ module.exports = {
   getLevelLeaderboard,
   setLevelAnnouncementChannel,
   getLevelAnnouncementChannel,
+  setAcceptAnnouncementChannel,
+  getAcceptAnnouncementChannel,
   setLevelLeaderboard,
   getLevelLeaderboardMessage,
   getLevelBadgeRoleId,
