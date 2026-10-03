@@ -487,6 +487,18 @@ function getAllScheduledAnnouncements() {
   return db.prepare('SELECT * FROM scheduled_announcements ORDER BY scheduled_date, hour, minute, id').all();
 }
 
+function getScheduledAnnouncements(guildId) {
+  return db.prepare(`
+    SELECT * FROM scheduled_announcements
+    WHERE guild_id = ?
+    ORDER BY scheduled_date, hour, minute, id
+  `).all(guildId);
+}
+
+function deleteScheduledAnnouncement(guildId, id) {
+  return db.prepare('DELETE FROM scheduled_announcements WHERE guild_id = ? AND id = ?').run(guildId, id).changes > 0;
+}
+
 function markScheduledAnnouncementSent(id, dateStr) {
   db.prepare('UPDATE scheduled_announcements SET last_sent_date = ? WHERE id = ?').run(dateStr, id);
 }
@@ -805,6 +817,8 @@ module.exports = {
   getAllConfigs,
   createScheduledAnnouncement,
   getAllScheduledAnnouncements,
+  getScheduledAnnouncements,
+  deleteScheduledAnnouncement,
   markScheduledAnnouncementSent,
   createPoll,
   getDuePolls,

@@ -898,6 +898,7 @@ client.on(Events.InteractionCreate, async interaction => {
           .setDescription([
             '**`/announcement`** Post a titled announcement; members react to confirm they have read it.',
             '**`/schedule-announcement`** Schedule a general or birthday announcement for a date, time, and timezone. Choose once, daily, weekly, or yearly recurrence.',
+            '**`/scheduled-announcements`** Managers list this server’s scheduled announcements and IDs. **`/delete-scheduled-announcement id`** removes one by ID.',
             '**`/birthday user`** Managers post a birthday greeting in the configured announcement channel.',
             '**`/accept-config announcement-channel`** Managers choose where acceptance welcomes are posted.',
             '**`/accept user role`** Managers replace a member’s assignable roles with the selected role and post a welcome in the configured acceptance channel.',
@@ -1492,6 +1493,59 @@ client.on(Events.InteractionCreate, async interaction => {
       const targetText = kind === 'birthday' ? ` for ${member}` : '';
       return interaction.reply({
         content: `✅ Scheduled ${kind === 'birthday' ? 'a birthday celebration' : 'an announcement'}${targetText} for **${date} at ${time} (${timezone})**${repeatText} in ${channel}. Schedule ID: **${scheduleId}**.`,
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.commandName === 'scheduled-announcements') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const schedules = db.getScheduledAnnouncements(interaction.guildId);
+      if (!schedules.length) {
+        return interaction.reply({ content: 'There are no scheduled announcements for this server.', ephemeral: true });
+      }
+
+      const recurrenceLabels = { once: 'once', daily: 'daily', weekly: 'weekly', yearly: 'yearly' };
+      const lines = schedules.map(schedule => {
+        const time = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
+        const target = schedule.kind === 'birthday'
+          ? `Birthday for user ${schedule.user_id}`
+          : `${schedule.title || 'Announcement'}: ${schedule.subject || 'No subject'}`;
+        const lastSent = schedule.last_sent_date ? `; last sent ${schedule.last_sent_date}` : '';
+        return `#${schedule.id} | ${schedule.kind} | ${schedule.scheduled_date} ${time} ${schedule.timezone} | ${recurrenceLabels[schedule.recurrence] || schedule.recurrence}\n<#${schedule.channel_id}> | ${target.slice(0, 250)}${lastSent}`;
+      });
+      const chunks = [];
+      let chunk = `Scheduled announcements (${schedules.length}):\n`;
+      for (const line of lines) {
+        const addition = `${line}\n`;
+        if (chunk.length + addition.length > 1900 && chunk !== '') {
+          chunks.push(chunk);
+          chunk = '';
+        }
+        chunk += addition;
+      }
+      if (chunk) chunks.push(chunk);
+
+      await interaction.reply({ content: chunks[0], ephemeral: true });
+      for (const nextChunk of chunks.slice(1)) {
+        await interaction.followUp({ content: nextChunk, ephemeral: true });
+      }
+      return;
+    }
+
+    if (interaction.commandName === 'delete-scheduled-announcement') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const scheduleId = interaction.options.getInteger('id', true);
+      const deleted = db.deleteScheduledAnnouncement(interaction.guildId, scheduleId);
+      return interaction.reply({
+        content: deleted
+          ? `✅ Deleted scheduled announcement #${scheduleId}.`
+          : `Scheduled announcement #${scheduleId} was not found in this server.`,
         ephemeral: true,
       });
     }

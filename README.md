@@ -36,6 +36,8 @@ nicknames.
   with the selected role, posts the welcome message, and adds a ❤️ reaction.
   The bot needs Manage Roles and must be above the member and affected roles in
   the role hierarchy.
+- Managers can use `/scheduled-announcements` to list scheduled announcements
+  for the current server, then `/delete-scheduled-announcement id` to remove one.
 - Members earn 15–25 chat XP for a message, with a 5-minute per-member
   message cooldown. Reacting to another member's message adds 3 XP to the
   reactor with no cooldown; self-reactions and bot reactions do not count.

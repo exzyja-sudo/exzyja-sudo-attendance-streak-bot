@@ -150,6 +150,20 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('scheduled-announcements')
+    .setDescription('List this server’s scheduled announcements and their IDs')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('delete-scheduled-announcement')
+    .setDescription('Delete one of this server’s scheduled announcements')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addIntegerOption(opt =>
+      opt.setName('id').setDescription('ID shown by /scheduled-announcements').setRequired(true).setMinValue(1))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('poll')
     .setDescription('Create a reaction poll and announce the outcome later')
     .addChannelOption(opt =>
