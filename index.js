@@ -1165,6 +1165,8 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'Set an acceptance announcement channel first using `/accept-config`.', ephemeral: true });
       }
 
+      await interaction.deferReply({ ephemeral: true });
+
       const users = [...new Set([
         interaction.options.getUser('user', true),
         ...Array.from({ length: 9 }, (_, index) => interaction.options.getUser(`user-${index + 2}`))
@@ -1176,25 +1178,25 @@ client.on(Events.InteractionCreate, async interaction => {
       ));
       const announcementChannel = await client.channels.fetch(announcementChannelId).catch(() => null);
       if (members.some(member => !member)) {
-        return interaction.reply({ content: 'One or more selected users are not in this server.', ephemeral: true });
+        return interaction.editReply({ content: 'One or more selected users are not in this server.' });
       }
       if (role.id === interaction.guild.id || role.managed) {
-        return interaction.reply({ content: 'Choose a normal, assignable server role.', ephemeral: true });
+        return interaction.editReply({ content: 'Choose a normal, assignable server role.' });
       }
       if (!announcementChannel?.isTextBased() || announcementChannel.isThread()) {
-        return interaction.reply({ content: 'The configured announcement channel could not be found.', ephemeral: true });
+        return interaction.editReply({ content: 'The configured announcement channel could not be found.' });
       }
 
       const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
       if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        return interaction.reply({ content: 'I need the Manage Roles permission to replace member roles.', ephemeral: true });
+        return interaction.editReply({ content: 'I need the Manage Roles permission to replace member roles.' });
       }
       const unmanageableMember = members.find(member => member.roles.highest.position >= botMember.roles.highest.position);
       if (unmanageableMember) {
-        return interaction.reply({ content: `Move my highest role above ${unmanageableMember}'s highest role before using /accept.`, ephemeral: true });
+        return interaction.editReply({ content: `Move my highest role above ${unmanageableMember}'s highest role before using /accept.` });
       }
       if (role.position >= botMember.roles.highest.position) {
-        return interaction.reply({ content: `Move my highest role above ${role} before using /accept.`, ephemeral: true });
+        return interaction.editReply({ content: `Move my highest role above ${role} before using /accept.` });
       }
 
       const membersWithUnmanageableRoles = members.filter(member => [...member.roles.cache.values()].some(existingRole =>
@@ -1204,7 +1206,7 @@ client.on(Events.InteractionCreate, async interaction => {
         && existingRole.position >= botMember.roles.highest.position
       ));
       if (membersWithUnmanageableRoles.length) {
-        return interaction.reply({ content: 'I cannot remove one or more selected members’ roles because they are at or above my highest role.', ephemeral: true });
+        return interaction.editReply({ content: 'I cannot remove one or more selected members’ roles because they are at or above my highest role.' });
       }
 
       try {
@@ -1219,13 +1221,13 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       } catch (error) {
         console.error('[accept] Failed to replace roles for selected members:', error);
-        return interaction.reply({ content: 'I could not update those members’ roles. Check my role permissions and hierarchy.', ephemeral: true });
+        return interaction.editReply({ content: 'I could not update those members’ roles. Check my role permissions and hierarchy.' });
       }
 
       const welcomeMessage = [
         '🎴 **WELCOME ABOARD!** 🎴',
         '',
-        `Welcome to **The Fool Family**, ${members.join(', ')}! 🃏`,
+        `Welcome to **The Fool Family**, ${members.map(member => member.toString()).join(', ')}! 🃏`,
         '',
         'Please take some time to explore the server and check out the important channels below:',
         '',
@@ -1256,10 +1258,10 @@ client.on(Events.InteractionCreate, async interaction => {
         await welcomePost.react('❤️');
       } catch (error) {
         console.error('[accept] Failed to announce accepted members:', error);
-        return interaction.reply({ content: `✅ Assigned ${role} to ${members.join(', ')} and replaced their previous roles, but I could not complete the welcome post and ❤️ reaction in ${announcementChannel}.`, ephemeral: true });
+        return interaction.editReply({ content: `✅ Assigned ${role} to ${members.map(member => member.toString()).join(', ')} and replaced their previous roles, but I could not complete the welcome post and ❤️ reaction in ${announcementChannel}.` });
       }
 
-      return interaction.reply({ content: `✅ Assigned ${role} to ${members.join(', ')}, replaced their previous roles, and posted one welcome message in ${announcementChannel}.`, ephemeral: true });
+      return interaction.editReply({ content: `✅ Assigned ${role} to ${members.map(member => member.toString()).join(', ')}, replaced their previous roles, and posted one welcome message in ${announcementChannel}.` });
     }
 
     if (interaction.commandName === 'accept-config') {
