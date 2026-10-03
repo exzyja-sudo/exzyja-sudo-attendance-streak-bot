@@ -1,6 +1,16 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
+function addUserOptions(command, firstDescription, additionalDescription) {
+  for (let index = 1; index <= 10; index += 1) {
+    command.addUserOption(opt =>
+      opt.setName(index === 1 ? 'user' : `user-${index}`)
+        .setDescription(index === 1 ? firstDescription : additionalDescription)
+        .setRequired(index === 1));
+  }
+  return command;
+}
+
 const commands = [
   new SlashCommandBuilder()
     .setName('help')
@@ -271,33 +281,37 @@ const commands = [
       opt.setName('user').setDescription('Member to greet for their birthday').setRequired(true))
     .toJSON(),
 
-  new SlashCommandBuilder()
-    .setName('meetme')
-    .setDescription('Assign the configured MeetMe role and announce it')
-    .addUserOption(opt =>
-      opt.setName('user').setDescription('Member to receive the MeetMe role').setRequired(true))
-    .toJSON(),
+  addUserOptions(
+    new SlashCommandBuilder()
+      .setName('meetme')
+      .setDescription('Assign the configured MeetMe role to up to 10 members'),
+    'Member to receive the MeetMe role',
+    'Additional member to receive the MeetMe role',
+  ).toJSON(),
 
-  new SlashCommandBuilder()
-    .setName('close-meetme')
-    .setDescription('End a member\'s active MeetMe assignment early')
-    .addUserOption(opt =>
-      opt.setName('user').setDescription('Member whose MeetMe access should end').setRequired(true))
-    .toJSON(),
+  addUserOptions(
+    new SlashCommandBuilder()
+      .setName('close-meetme')
+      .setDescription('End active MeetMe assignments for up to 10 members'),
+    'Member whose MeetMe access should end',
+    'Additional member whose MeetMe access should end',
+  ).toJSON(),
 
-  new SlashCommandBuilder()
-    .setName('forgive-inactive')
-    .setDescription('Restore a member\'s roles after forgiving their inactive status')
-    .addUserOption(opt =>
-      opt.setName('user').setDescription('Member whose previous roles should be restored').setRequired(true))
-    .toJSON(),
+  addUserOptions(
+    new SlashCommandBuilder()
+      .setName('forgive-inactive')
+      .setDescription('Restore roles for up to 10 members after forgiving their inactive status'),
+    'Member whose previous roles should be restored',
+    'Additional member whose previous roles should be restored',
+  ).toJSON(),
 
-  new SlashCommandBuilder()
-    .setName('the-judge')
-    .setDescription('Apply the inactive role to a member and announce the hold')
-    .addUserOption(opt =>
-      opt.setName('user').setDescription('Member to place on hold').setRequired(true))
-    .toJSON(),
+  addUserOptions(
+    new SlashCommandBuilder()
+      .setName('the-judge')
+      .setDescription('Apply the inactive role to up to 10 members and announce the holds'),
+    'Member to place on hold',
+    'Additional member to place on hold',
+  ).toJSON(),
 
   new SlashCommandBuilder()
     .setName('mute')

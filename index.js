@@ -455,6 +455,13 @@ async function refreshLevelLeaderboard(guildId) {
   }
 }
 
+function getSelectedUsers(interaction) {
+  const users = Array.from({ length: 10 }, (_, index) =>
+    interaction.options.getUser(index === 0 ? 'user' : `user-${index + 1}`)
+  ).filter(Boolean);
+  return [...new Map(users.map(user => [user.id, user])).values()];
+}
+
 function parseExemptionRoleIds(value) {
   if (!value) return [];
   return [...new Set(value.split(/[\s,]+/).map(role => {
@@ -922,9 +929,9 @@ client.on(Events.InteractionCreate, async interaction => {
           .setDescription([
             '**`/clear-messages channel amount`** Members with Manage Messages can review and confirm deletion of 1–100 recent messages. Messages older than 14 days are excluded.',
             '**`/restore-streak users streak`** Managers restore streaks for multiple members and refresh their shields.',
-            '**`/meetme user`** Managers assign the configured MeetMe role for 20 minutes. **`/close-meetme user`** ends an active assignment early.',
-            '**`/forgive-inactive user`** Managers remove a member’s inactive role and restore saved roles when available.',
-            '**`/the-judge user`** Managers place a member on inactive hold and announce it.',
+            '**`/meetme user user-2...user-10`** Managers assign the configured MeetMe role to up to 10 members for 20 minutes. **`/close-meetme user user-2...user-10`** ends their active assignments early.',
+            '**`/forgive-inactive user user-2...user-10`** Managers remove inactive status and restore saved roles for up to 10 members.',
+            '**`/the-judge user user-2...user-10`** Managers place up to 10 members on inactive hold and announce them together.',
             '**`/mute user duration reason`** Moderators apply a timeout and announce it in the configured announcement channel. Durations: `1s`, `1m`, `1h`, or `1d` (maximum `28d`).',
             '**`/unmute user`** Moderators remove an active timeout and announce it in the configured announcement channel.',
             '**Role automation:** Configure active, inactive, and exemption roles in `/setup-attendance`. Inactive status can remove saved access roles; checking in can restore them.',
@@ -1904,53 +1911,81 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'Configure an `announcement-channel` first with `/setup-attendance`.', ephemeral: true });
       }
 
-      const user = interaction.options.getUser('user', true);
-      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      const users = getSelectedUsers(interaction);
+      await interaction.deferReply({ ephemeral: true });
+
       const meetmeRole = interaction.guild.roles.cache.get(config.meetme_role_id)
         || await interaction.guild.roles.fetch(config.meetme_role_id).catch(() => null);
       const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
-      if (!member) {
-        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
-      }
       if (!meetmeRole || meetmeRole.managed || meetmeRole.id === interaction.guild.id) {
-        return interaction.reply({ content: 'The configured MeetMe role could not be found or cannot be assigned.', ephemeral: true });
+        return interaction.editReply({ content: 'The configured MeetMe role could not be found or cannot be assigned.' });
       }
       if (!announcementChannel?.isTextBased()) {
-        return interaction.reply({ content: 'The configured announcement channel could not be found.', ephemeral: true });
+        return interaction.editReply({ content: 'The configured announcement channel could not be found.' });
       }
 
       const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
       if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        return interaction.reply({ content: 'I need the Manage Roles permission to assign the MeetMe role.', ephemeral: true });
+        return interaction.editReply({ content: 'I need the Manage Roles permission to assign the MeetMe role.' });
       }
       if (meetmeRole.position >= botMember.roles.highest.position) {
-        return interaction.reply({ content: `Move my highest role above ${meetmeRole} before using /meetme.`, ephemeral: true });
+        return interaction.editReply({ content: `Move my highest role above ${meetmeRole} before using /meetme.` });
       }
       const canAnnounce = announcementChannel.permissionsFor(botMember);
       if (!canAnnounce?.has(PermissionFlagsBits.SendMessages) || !canAnnounce.has(PermissionFlagsBits.EmbedLinks)) {
-        return interaction.reply({ content: 'I need Send Messages and Embed Links permission in the announcement channel.', ephemeral: true });
-      }
-      if (member.roles.cache.has(meetmeRole.id)) {
-        return interaction.reply({ content: `${member} already has ${meetmeRole}.`, ephemeral: true });
+        return interaction.editReply({ content: 'I need Send Messages and Embed Links permission in the announcement channel.' });
       }
 
-      await member.roles.add(meetmeRole);
-      const expiresAt = Date.now() + MEETME_DURATION_MS;
-      db.createMeetmeAssignment({
-        guildId: interaction.guildId,
-        userId: member.id,
-        roleId: meetmeRole.id,
-        expiresAt,
+      const results = [];
+      const assignedMembers = [];
+      for (const user of users) {
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          results.push(`❌ ${user} is not in this server.`);
+          continue;
+        }
+        if (member.roles.cache.has(meetmeRole.id)) {
+          results.push(`⚠️ ${member} already has ${meetmeRole}.`);
+          continue;
+        }
+
+        try {
+          await member.roles.add(meetmeRole);
+          db.createMeetmeAssignment({
+            guildId: interaction.guildId,
+            userId: member.id,
+            roleId: meetmeRole.id,
+            expiresAt: Date.now() + MEETME_DURATION_MS,
+          });
+          assignedMembers.push(member);
+          results.push(`✅ Assigned ${meetmeRole} to ${member} for 20 minutes.`);
+        } catch (error) {
+          console.error(`[meetme] Failed to assign role to ${user.id}:`, error.message);
+          results.push(`❌ Could not assign ${meetmeRole} to ${user}.`);
+        }
+      }
+
+      let announced = false;
+      if (assignedMembers.length) {
+        const notice = new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle('📣 Called to the Meeting Room')
+          .setDescription(assignedMembers.map(member => `${member} has been called to the Meeting room and given ${meetmeRole}. Access will end after 20 minutes.`).join('\n'))
+          .setFooter({ text: 'MeetMe assignment' })
+          .setTimestamp();
+        announced = await announcementChannel.send({
+          content: `${assignedMembers.map(member => member.toString()).join(', ')} called to the Meeting room.`,
+          embeds: [notice],
+          allowedMentions: { users: assignedMembers.map(member => member.id) },
+        }).then(() => true).catch(error => {
+          console.error('[meetme] Failed to announce assignments:', error.message);
+          return false;
+        });
+      }
+
+      return interaction.editReply({
+        content: `${results.join('\n')}${assignedMembers.length ? announced ? `\nAnnounced in ${announcementChannel}.` : `\nAssignments succeeded, but I could not announce them in ${announcementChannel}.` : ''}`,
       });
-      const notice = new EmbedBuilder()
-        .setColor(0x57f287)
-        .setTitle('📣 Called to the Meeting Room')
-        .setDescription(`${member} has been called to the Meeting room and given ${meetmeRole}. Access will end after 20 minutes.`)
-        .setFooter({ text: 'MeetMe assignment' })
-        .setTimestamp();
-      await announcementChannel.send({ embeds: [notice] });
-
-      return interaction.reply({ content: `✅ Assigned ${meetmeRole} to ${member} and announced it in ${announcementChannel}.`, ephemeral: true });
     }
 
     if (interaction.commandName === 'close-meetme') {
@@ -1958,60 +1993,86 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
-      const user = interaction.options.getUser('user', true);
-      const assignment = db.getActiveMeetmeAssignment(interaction.guildId, user.id);
-      if (!assignment) {
-        return interaction.reply({ content: `${user} has no active MeetMe assignment.`, ephemeral: true });
-      }
-
-      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      if (!member) {
-        db.markMeetmeAssignmentRemoved(assignment.id);
-        return interaction.reply({ content: `${user} is no longer in this server; their MeetMe assignment has been closed.`, ephemeral: true });
-      }
-
-      const meetmeRole = interaction.guild.roles.cache.get(assignment.role_id)
-        || await interaction.guild.roles.fetch(assignment.role_id).catch(() => null);
-      if (!meetmeRole) {
-        db.markMeetmeAssignmentRemoved(assignment.id);
-        return interaction.reply({ content: `The MeetMe role no longer exists. ${member}'s assignment has been closed.`, ephemeral: true });
-      }
-
+      const users = getSelectedUsers(interaction);
+      await interaction.deferReply({ ephemeral: true });
       const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
       if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        return interaction.reply({ content: 'I need the Manage Roles permission to remove the MeetMe role.', ephemeral: true });
-      }
-      if (meetmeRole.position >= botMember.roles.highest.position) {
-        return interaction.reply({ content: `Move my highest role above ${meetmeRole} before closing this MeetMe assignment.`, ephemeral: true });
+        return interaction.editReply({ content: 'I need the Manage Roles permission to remove the MeetMe role.' });
       }
 
-      const hadRole = member.roles.cache.has(meetmeRole.id);
-      if (hadRole) {
-        await member.roles.remove(meetmeRole, `MeetMe assignment closed by ${interaction.user.tag}`);
+      const results = [];
+      const closedMembers = [];
+      for (const user of users) {
+        const assignment = db.getActiveMeetmeAssignment(interaction.guildId, user.id);
+        if (!assignment) {
+          results.push(`⚠️ ${user} has no active MeetMe assignment.`);
+          continue;
+        }
+
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          db.markMeetmeAssignmentRemoved(assignment.id);
+          results.push(`✅ ${user} is no longer in this server; their assignment was closed.`);
+          continue;
+        }
+
+        const meetmeRole = interaction.guild.roles.cache.get(assignment.role_id)
+          || await interaction.guild.roles.fetch(assignment.role_id).catch(() => null);
+        if (!meetmeRole) {
+          db.markMeetmeAssignmentRemoved(assignment.id);
+          results.push(`✅ Closed ${member}'s assignment; the MeetMe role no longer exists.`);
+          continue;
+        }
+        if (meetmeRole.position >= botMember.roles.highest.position) {
+          results.push(`❌ Could not close ${member}'s assignment; ${meetmeRole} is at or above my highest role.`);
+          continue;
+        }
+
+        const hadRole = member.roles.cache.has(meetmeRole.id);
+        try {
+          if (hadRole) {
+            await member.roles.remove(meetmeRole, `MeetMe assignment closed by ${interaction.user.tag}`);
+          }
+          db.markMeetmeAssignmentRemoved(assignment.id);
+          closedMembers.push(member);
+          results.push(hadRole
+            ? `✅ Removed ${meetmeRole} from ${member} and closed their assignment.`
+            : `✅ Closed ${member}'s assignment; they no longer had ${meetmeRole}.`);
+        } catch (error) {
+          console.error(`[meetme] Failed to close assignment for ${user.id}:`, error.message);
+          results.push(`❌ Could not remove ${meetmeRole} from ${member}.`);
+        }
       }
-      db.markMeetmeAssignmentRemoved(assignment.id);
 
       const config = db.getConfig(interaction.guildId);
       const announcementChannel = config?.announcement_channel_id
         ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
         : null;
-      if (announcementChannel?.isTextBased()) {
+      let announced = false;
+      if (closedMembers.length && announcementChannel?.isTextBased() && !announcementChannel.isThread()) {
         const notice = new EmbedBuilder()
           .setColor(0xed4245)
           .setTitle('🚪 Meeting Room Access Ended')
-          .setDescription(`${member}'s MeetMe access was ended early by ${interaction.user}.`)
+          .setDescription(closedMembers.map(member => `${member}'s MeetMe access was ended early by ${interaction.user}.`).join('\n'))
           .setFooter({ text: 'MeetMe assignment closed manually' })
           .setTimestamp();
-        await announcementChannel.send({ embeds: [notice] }).catch(err =>
-          console.error(`[meetme] Failed to announce manual closure for ${user.id}:`, err.message)
-        );
+        announced = await announcementChannel.send({
+          content: `${closedMembers.map(member => member.toString()).join(', ')} had Meeting Room access ended.`,
+          embeds: [notice],
+          allowedMentions: { users: closedMembers.map(member => member.id) },
+        }).then(() => true).catch(error => {
+          console.error('[meetme] Failed to announce manual closures:', error.message);
+          return false;
+        });
       }
 
-      return interaction.reply({
-        content: hadRole
-          ? `✅ Removed ${meetmeRole} from ${member} and closed their MeetMe assignment.`
-          : `✅ Closed ${member}'s MeetMe assignment; they no longer had ${meetmeRole}.`,
-        ephemeral: true,
+      const announcementStatus = closedMembers.length
+        ? announced
+          ? `\nAnnounced in ${announcementChannel}.`
+          : '\nAssignments were closed, but I could not post the announcement.'
+        : '';
+      return interaction.editReply({
+        content: `${results.join('\n')}${announcementStatus}`,
       });
     }
 
@@ -2025,53 +2086,72 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'Inactive role automation is not configured.', ephemeral: true });
       }
 
-      const user = interaction.options.getUser('user', true);
-      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      if (!member) {
-        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
-      }
+      const users = getSelectedUsers(interaction);
+      await interaction.deferReply({ ephemeral: true });
 
-      const forgiveResult = await forgiveInactiveRole(member, config);
-      if (!forgiveResult.ok) {
-        const content = forgiveResult.reason === 'exempt'
-          ? `That member is exempt from automatic role changes.`
-          : 'No saved roles were found, or this member is exempt.';
-        return interaction.reply({ content, ephemeral: true });
-      }
+      const results = [];
+      const forgivenMembers = [];
+      for (const user of users) {
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          results.push(`❌ ${user} is not in this server.`);
+          continue;
+        }
 
-      const existing = db.getStreak(interaction.guildId, user.id);
-      if (existing) {
-        const restoredStreak = Math.max(existing.current_streak, existing.longest_streak);
-        db.restoreStreak(interaction.guildId, user.id, restoredStreak);
+        const forgiveResult = await forgiveInactiveRole(member, config);
+        if (!forgiveResult.ok) {
+          if (forgiveResult.reason === 'exempt') {
+            results.push(`⚠️ ${member} is exempt from automatic role changes.`);
+          } else if (forgiveResult.reason === 'error') {
+            results.push(`❌ Could not restore ${member}'s roles.`);
+          } else {
+            results.push(`⚠️ No saved roles were found for ${member}.`);
+          }
+          continue;
+        }
+
+        const existing = db.getStreak(interaction.guildId, user.id);
+        if (existing) {
+          const restoredStreak = Math.max(existing.current_streak, existing.longest_streak);
+          db.restoreStreak(interaction.guildId, user.id, restoredStreak);
+        }
+        forgivenMembers.push(member);
+        results.push(forgiveResult.restoredRoles
+          ? `✅ Restored ${member}'s roles from before inactive status.`
+          : `✅ Removed ${member}'s inactive role; no saved roles were available.`);
       }
 
       const announcementChannel = config.announcement_channel_id
         ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
         : null;
-
-      if (announcementChannel?.isTextBased()) {
+      let announced = false;
+      if (forgivenMembers.length && announcementChannel?.isTextBased() && !announcementChannel.isThread()) {
         const notice = new EmbedBuilder()
           .setColor(0xf1c40f)
           .setTitle('⚠️ Second Chance Granted')
           .setDescription([
-            `${member} has been given a **second chance**. Please make sure to **follow THE FOOL rules** and maintain proper **activity** this time.`,
+            ...forgivenMembers.map(member => `${member} has been given a **second chance**. Please make sure to **follow THE FOOL rules** and maintain proper **activity** this time.`),
             '',
             'This is your chance to prove that you can follow the rules and stay active. **Don’t waste it.**',
           ].join('\n'))
           .setTimestamp();
-
-        await announcementChannel.send({ embeds: [notice] }).catch(err =>
-          console.error(`[announcement] Failed to notify forgiven member ${member.id}:`, err.message)
-        );
+        announced = await announcementChannel.send({
+          content: forgivenMembers.map(member => member.toString()).join(', '),
+          embeds: [notice],
+          allowedMentions: { users: forgivenMembers.map(member => member.id) },
+        }).then(() => true).catch(error => {
+          console.error('[announcement] Failed to notify forgiven members:', error.message);
+          return false;
+        });
       }
 
-      await refreshActiveAttendanceEmbed(interaction.guildId, config);
-
-      const content = forgiveResult.restoredRoles
-        ? `Restored ${member} to their roles from before inactive status.`
-        : `Removed ${member}'s inactive role. No saved roles were found for this member.`;
-
-      return interaction.reply({ content, ephemeral: true });
+      if (forgivenMembers.length) await refreshActiveAttendanceEmbed(interaction.guildId, config);
+      const announcementStatus = forgivenMembers.length
+        ? announced
+          ? `\nAnnounced in ${announcementChannel}.`
+          : '\nThe role updates succeeded, but I could not post the announcement.'
+        : '';
+      return interaction.editReply({ content: `${results.join('\n')}${announcementStatus}` });
     }
 
     if (interaction.commandName === 'mute') {
@@ -2229,51 +2309,62 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'The inactive role is not configured yet. Run `/setup-attendance` and choose an inactive role first.', ephemeral: true });
       }
 
+      const users = getSelectedUsers(interaction);
+      await interaction.deferReply({ ephemeral: true });
+
       const botMember = interaction.guild?.members?.me || await interaction.guild?.members.fetchMe().catch(() => null);
       if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        return interaction.reply({ content: 'I need the Manage Roles permission in this server to use `/the-judge`.', ephemeral: true });
+        return interaction.editReply({ content: 'I need the Manage Roles permission in this server to use `/the-judge`.' });
       }
 
       const inactiveRole = interaction.guild.roles.cache.get(config.inactive_role_id) || await interaction.guild.roles.fetch(config.inactive_role_id).catch(() => null);
       if (!inactiveRole) {
-        return interaction.reply({ content: 'The configured inactive role could not be found in this server. Re-run `/setup-attendance` and choose it again.', ephemeral: true });
+        return interaction.editReply({ content: 'The configured inactive role could not be found in this server. Re-run `/setup-attendance` and choose it again.' });
       }
 
       if (inactiveRole.position >= botMember.roles.highest.position) {
-        return interaction.reply({ content: `I can’t assign <@&${inactiveRole.id}> because it is at or above my highest role. Move my top role above the inactive role in Server Settings → Roles.`, ephemeral: true });
+        return interaction.editReply({ content: `I can’t assign <@&${inactiveRole.id}> because it is at or above my highest role. Move my top role above the inactive role in Server Settings → Roles.` });
       }
 
-      const user = interaction.options.getUser('user', true);
-      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-      if (!member) {
-        return interaction.reply({ content: 'That member is not in this server.', ephemeral: true });
-      }
-
-      if (member.roles.cache.has(config.inactive_role_id)) {
-        return interaction.reply({ content: `${member} is already on inactive hold.`, ephemeral: true });
-      }
-
-      try {
-        if (config.role_automation_enabled === 1) {
-          await saveCurrentMemberRoles(member, config);
-          await updateAttendanceRoles(member, config, true);
-        } else {
-          await member.roles.add(config.inactive_role_id);
+      const results = [];
+      const judgedMembers = [];
+      for (const user of users) {
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          results.push(`❌ ${user} is not in this server.`);
+          continue;
         }
-      } catch (err) {
-        console.error(`[roles] Failed to apply inactive role to ${member.user.tag}:`, err.message);
-        return interaction.reply({ content: `I couldn’t add the inactive role to ${member}. Check that the role is below my highest role and that I still have Manage Roles permission.`, ephemeral: true });
+        if (member.roles.cache.has(config.inactive_role_id)) {
+          results.push(`⚠️ ${member} is already on inactive hold.`);
+          continue;
+        }
+
+        try {
+          if (config.role_automation_enabled === 1) {
+            await saveCurrentMemberRoles(member, config);
+            const updated = await updateAttendanceRoles(member, config, true);
+            if (!updated) throw new Error('Role automation skipped this member.');
+          } else {
+            await member.roles.add(config.inactive_role_id);
+          }
+          judgedMembers.push(member);
+          results.push(`✅ Applied the inactive role to ${member}.`);
+        } catch (error) {
+          console.error(`[roles] Failed to apply inactive role to ${member.user.tag}:`, error.message);
+          results.push(`❌ Could not apply the inactive role to ${member}. Check role permissions and hierarchy.`);
+        }
       }
 
       const channel = config.announcement_channel_id
         ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
         : null;
 
-      if (channel?.isTextBased()) {
+      let announced = false;
+      if (judgedMembers.length && channel?.isTextBased() && !channel.isThread()) {
         const notice = new EmbedBuilder()
           .setColor(0xed4245)
           .setTitle('⚠️ ON HOLD NOTICE')
-          .setDescription(`${member} has been temporarily moved to **ON HOLD** and assigned the inactive role.`)
+          .setDescription(judgedMembers.map(member => `${member} has been temporarily moved to **ON HOLD** and assigned the inactive role.`).join('\n'))
           .addFields({
             name: 'Status',
             value: 'This is a temporary hold. Please review the rules before returning to regular activities.',
@@ -2281,12 +2372,22 @@ client.on(Events.InteractionCreate, async interaction => {
           .setFooter({ text: 'Inactive role assigned by THE JUDGE' })
           .setTimestamp();
 
-        await channel.send({ embeds: [notice] }).catch(err =>
-          console.error(`[announcement] Failed to notify judged member ${member.id}:`, err.message)
-        );
+        announced = await channel.send({
+          content: judgedMembers.map(member => member.toString()).join(', '),
+          embeds: [notice],
+          allowedMentions: { users: judgedMembers.map(member => member.id) },
+        }).then(() => true).catch(error => {
+          console.error('[announcement] Failed to notify judged members:', error.message);
+          return false;
+        });
       }
 
-      return interaction.reply({ content: `Applied the inactive role to ${member} and announced the hold.`, ephemeral: true });
+      const announcementStatus = judgedMembers.length
+        ? announced
+          ? `\nAnnounced in ${channel}.`
+          : '\nThe role updates succeeded, but I could not post the announcement.'
+        : '';
+      return interaction.editReply({ content: `${results.join('\n')}${announcementStatus}` });
     }
   } catch (err) {
     console.error('[interaction] error:', err);

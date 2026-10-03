@@ -63,8 +63,9 @@ nicknames.
   access roles and add an inactive role. It saves the member's latest active
   roles when they check in, so the bot can restore them later. A configured
   exemption role prevents all automatic role changes for its members.
-- Moderators can use `/forgive-inactive user` to remove the inactive role and
-  restore the saved roles from before the inactive transition.
+- Moderators can use `/forgive-inactive user [user-2...user-10]` to remove the
+  inactive role and restore saved roles for up to 10 members. `/the-judge user
+  [user-2...user-10]` applies the inactive role to up to 10 members at once.
 - Role automation is optional. Set `enable-role-automation` to `true` in
   `/setup-attendance` and choose an inactive role to activate it. Leave it
   false to run attendance and streak tracking without any role changes.
@@ -226,10 +227,12 @@ otherwise the bot effectively goes offline between visits.
 | `/setup-attendance channel [announcement-channel] time [timezone] [title] [message] [enable-role-automation] [active-role] [inactive-role] [meetme-role] [exemption-roles]` | Manage Server perm | Configure the daily post, optional inactive-member announcements, role automation, and the role used by `/meetme`. |
 | `/schedule-announcement channel date time timezone type recurrence [user] [title] [subject] [message]` | Manage Server perm | Schedule a one-time or yearly general announcement or birthday celebration. |
 | `/announcement channel title subject message` | Manage Server perm | Post an announcement immediately. |
-| `/meetme user` | Manage Server perm | Call a member to the Meeting room, assign the configured role for 20 minutes, and announce assignment and expiry. |
+| `/meetme user [user-2...user-10]` | Manage Server perm | Call up to 10 members to the Meeting room, assign the configured role for 20 minutes, and announce the assignments. |
+| `/close-meetme user [user-2...user-10]` | Manage Server perm | End up to 10 members' active MeetMe assignments early and announce the closures. |
 | `/poll channel outcome-channel access-role question options duration` | Manage Server perm | Open the poll channel to the access role, use 🟢 then 🔴, and announce the result before hiding the channel again. |
 | `/close-poll poll-id` | Manage Server perm | Close an active poll immediately, announce its current result, and hide the poll channel from its access role. |
-| `/forgive-inactive user` | Manage Server perm | Remove the inactive role and restore the member's roles from before the inactive transition. |
+| `/forgive-inactive user [user-2...user-10]` | Manage Server perm | Remove the inactive role and restore saved roles for up to 10 members. |
+| `/the-judge user [user-2...user-10]` | Manage Server perm | Place up to 10 members on inactive hold and announce them together. |
 | `/mute user duration reason` | Moderate Members perm | Timeout a member for a duration such as `1s`, `1m`, `1h`, or `1d` (maximum 28 days), then announce the duration and reason in the configured announcement channel. |
 | `/unmute user` | Moderate Members perm | Remove a member's active timeout and announce it in the configured announcement channel. |
 | `/post-attendance-now` | Anyone with access | Posts today's attendance message immediately (good for testing). |
