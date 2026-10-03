@@ -337,6 +337,44 @@ function addLevels(guildId, userId, levels) {
   return add();
 }
 
+function demoteLevels(guildId, userId, levels) {
+  if (!Number.isSafeInteger(levels) || levels < 1) {
+    throw new RangeError('Levels to demote must be a positive integer.');
+  }
+
+  const demote = db.transaction(() => {
+    const existing = db.prepare('SELECT total_xp FROM user_levels WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
+    const previousXp = existing?.total_xp || 0;
+    const previousProgress = getLevelProgress(previousXp);
+    const levelsDemoted = Math.min(levels, previousProgress.level - 1);
+    const targetLevel = previousProgress.level - levelsDemoted;
+    const targetProgress = Math.min(
+      previousProgress.xp_into_level,
+      xpRequiredForLevelUps(targetLevel, 1) - 1,
+    );
+    const totalXp = xpRequiredToReachLevel(targetLevel) + targetProgress;
+    const xpRemoved = previousXp - totalXp;
+
+    db.prepare(`
+      INSERT INTO user_levels (guild_id, user_id, total_xp, last_xp_at, progression_version)
+      VALUES (?, ?, ?, 0, 3)
+      ON CONFLICT(guild_id, user_id) DO UPDATE SET total_xp = excluded.total_xp
+    `).run(guildId, userId, totalXp);
+
+    return {
+      guild_id: guildId,
+      user_id: userId,
+      total_xp: totalXp,
+      levels_demoted: levelsDemoted,
+      xp_removed: xpRemoved,
+      previous_level: previousProgress.level,
+      ...getLevelProgress(totalXp),
+    };
+  });
+
+  return demote();
+}
+
 function setLevelAnnouncementChannel(guildId, channelId) {
   db.prepare(`
     INSERT INTO level_settings (guild_id, announcement_channel_id)
@@ -797,6 +835,7 @@ module.exports = {
   awardMessageXp,
   awardReactionXp,
   addLevels,
+  demoteLevels,
   getLevel,
   getLevelLeaderboard,
   setLevelAnnouncementChannel,

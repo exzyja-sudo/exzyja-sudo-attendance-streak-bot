@@ -232,6 +232,16 @@ const commands = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('level-demote')
+    .setDescription('Remove levels from a member')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member who will lose levels').setRequired(true))
+    .addIntegerOption(opt =>
+      opt.setName('levels').setDescription('Number of levels to remove').setRequired(true).setMinValue(1).setMaxValue(100))
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('level-config')
     .setDescription('Choose where level-up announcements are posted')
     .addChannelOption(opt =>
@@ -287,6 +297,26 @@ const commands = [
     .setDescription('Apply the inactive role to a member and announce the hold')
     .addUserOption(opt =>
       opt.setName('user').setDescription('Member to place on hold').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('mute')
+    .setDescription('Timeout a member and announce the reason')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member to mute').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('duration').setDescription('Duration such as 1s, 1m, 1h, or 1d (maximum 28d)').setRequired(true).setMaxLength(16))
+    .addStringOption(opt =>
+      opt.setName('reason').setDescription('Reason for the mute').setRequired(true).setMaxLength(400))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('unmute')
+    .setDescription('Remove a member\'s timeout and announce it')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member whose timeout should be removed').setRequired(true))
     .toJSON(),
 ];
 

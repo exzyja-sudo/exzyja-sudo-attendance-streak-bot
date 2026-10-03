@@ -85,6 +85,16 @@ function parsePollDuration(value) {
     : null;
 }
 
+function parseMuteDuration(value) {
+  const match = /^([1-9]\d*)([smhd])$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const multipliers = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+  const durationMs = Number(match[1]) * multipliers[match[2].toLowerCase()];
+  return Number.isSafeInteger(durationMs) && durationMs <= 28 * 24 * 60 * 60 * 1000
+    ? durationMs
+    : null;
+}
+
 async function discordRequest(endpoint, options = {}) {
   const response = await fetch(`https://discord.com/api/v10${endpoint}`, options);
   const responseText = await response.text();
@@ -890,6 +900,7 @@ client.on(Events.InteractionCreate, async interaction => {
             '**Level display:** Managers can use `/level-nickname enabled:true` to add a star and level number to server nicknames. It is off by default and needs Manage Nicknames permission.',
             '**`/level`** View your level, or choose a member. **`/level-leaderboard-config channel`** sets the public leaderboard location; `/level-leaderboard` refreshes its single post.',
             '**`/level-up user levels`** Managers can manually grant levels. The announcement color follows the new level.',
+            '**`/level-demote user levels`** Managers can manually remove levels, down to Level 1.',
             '**`/level-config announcement-channel`** Managers choose where level-up cards are posted.',
           ].join('\n\n')),
         new EmbedBuilder()
@@ -914,6 +925,8 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/meetme user`** Managers assign the configured MeetMe role for 20 minutes. **`/close-meetme user`** ends an active assignment early.',
             '**`/forgive-inactive user`** Managers remove a member’s inactive role and restore saved roles when available.',
             '**`/the-judge user`** Managers place a member on inactive hold and announce it.',
+            '**`/mute user duration reason`** Moderators apply a timeout and announce it in the configured announcement channel. Durations: `1s`, `1m`, `1h`, or `1d` (maximum `28d`).',
+            '**`/unmute user`** Moderators remove an active timeout and announce it in the configured announcement channel.',
             '**Role automation:** Configure active, inactive, and exemption roles in `/setup-attendance`. Inactive status can remove saved access roles; checking in can restore them.',
           ].join('\n\n')),
       ];
@@ -1647,6 +1660,56 @@ client.on(Events.InteractionCreate, async interaction => {
       });
     }
 
+    if (interaction.commandName === 'level-demote') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const levels = interaction.options.getInteger('levels', true);
+      const result = db.demoteLevels(interaction.guildId, user.id, levels);
+      if (result.levels_demoted === 0) {
+        return interaction.reply({ content: `${user} is already Level 1; no levels were removed.`, ephemeral: true });
+      }
+
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (member) await syncLevelNickname(member, result.level, db);
+      await refreshLevelLeaderboard(interaction.guildId);
+      const configuredChannelId = db.getLevelAnnouncementChannel(interaction.guildId);
+      const announcementChannel = configuredChannelId
+        ? await client.channels.fetch(configuredChannelId).catch(() => null)
+        : interaction.channel;
+      let announced = false;
+
+      if (announcementChannel?.isTextBased()) {
+        const demotionEmbed = new EmbedBuilder()
+          .setColor(getLevelColor(result.level))
+          .setTitle('Level Demotion')
+          .setDescription(`**${user.username}** is now **Level ${result.level}**.`)
+          .addFields(
+            { name: 'Levels Removed', value: `**${result.levels_demoted}**`, inline: true },
+            { name: 'XP Removed', value: `**-${result.xp_removed} XP**`, inline: true },
+            { name: 'Total XP', value: `**${result.total_xp} XP**`, inline: true },
+          )
+          .setTimestamp();
+        try {
+          await announcementChannel.send({
+            content: `⬇️ <@${user.id}> was demoted.`,
+            embeds: [demotionEmbed],
+            allowedMentions: { users: [user.id] },
+          });
+          announced = true;
+        } catch (error) {
+          console.error(`[level] Failed to announce manual demotion for ${user.id}:`, error.message);
+        }
+      }
+
+      return interaction.reply({
+        content: `Removed **${result.levels_demoted} level${result.levels_demoted === 1 ? '' : 's'}** from ${user}. They are now **Level ${result.level}** with **${result.total_xp} XP**.${announced ? ` Announced in ${announcementChannel}.` : ' The demotion succeeded, but I could not post in the configured announcement channel.'}`,
+        ephemeral: true,
+      });
+    }
+
     if (interaction.commandName === 'level-config') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
@@ -2009,6 +2072,151 @@ client.on(Events.InteractionCreate, async interaction => {
         : `Removed ${member}'s inactive role. No saved roles were found for this member.`;
 
       return interaction.reply({ content, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'mute') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ content: 'You need the Moderate Members permission to do this.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const durationText = interaction.options.getString('duration', true).trim().toLowerCase();
+      const durationMs = parseMuteDuration(durationText);
+      if (!durationMs) {
+        return interaction.reply({ content: 'Use a duration like `1s`, `1m`, `1h`, or `1d` (maximum `28d`).', ephemeral: true });
+      }
+      const reason = normalizeAnnouncementText(interaction.options.getString('reason', true), 400);
+      if (!reason) {
+        return interaction.reply({ content: 'Provide a reason for the mute.', ephemeral: true });
+      }
+
+      const config = db.getConfig(interaction.guildId);
+      if (!config?.announcement_channel_id) {
+        return interaction.reply({ content: 'Configure an announcement channel first using `/setup-attendance`.', ephemeral: true });
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (!member) {
+        return interaction.editReply({ content: 'That member is not in this server.' });
+      }
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.editReply({ content: 'I need the Moderate Members permission to mute members.' });
+      }
+      if (!member.moderatable) {
+        return interaction.editReply({ content: 'I cannot mute that member because of their role hierarchy or server-owner status.' });
+      }
+
+      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      if (!announcementChannel?.isTextBased() || announcementChannel.isThread()) {
+        return interaction.editReply({ content: 'The configured announcement channel could not be found.' });
+      }
+      const channelPermissions = announcementChannel.permissionsFor(botMember);
+      if (!channelPermissions?.has(PermissionFlagsBits.ViewChannel)
+        || !channelPermissions.has(PermissionFlagsBits.SendMessages)
+        || !channelPermissions.has(PermissionFlagsBits.EmbedLinks)) {
+        return interaction.editReply({ content: 'I need View Channel, Send Messages, and Embed Links permissions in the configured announcement channel.' });
+      }
+
+      try {
+        await member.timeout(durationMs, `Muted by ${interaction.user.tag}: ${reason}`);
+      } catch (error) {
+        console.error(`[moderation] Failed to mute ${user.id}:`, error.message);
+        return interaction.editReply({ content: 'I could not mute that member. Check my permissions and role hierarchy, then try again.' });
+      }
+
+      const notice = new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle('🔇 Member Muted')
+        .setDescription(`${member} was muted by ${interaction.user}.`)
+        .addFields(
+          { name: 'Duration', value: durationText, inline: true },
+          { name: 'Reason', value: reason },
+        )
+        .setTimestamp();
+      const announced = await announcementChannel.send({
+        content: `🔇 ${member} was muted.`,
+        embeds: [notice],
+        allowedMentions: { users: [member.id] },
+      }).then(() => true).catch(error => {
+        console.error(`[moderation] Failed to announce mute for ${user.id}:`, error.message);
+        return false;
+      });
+
+      return interaction.editReply({
+        content: announced
+          ? `Muted ${member} for **${durationText}** and announced it in ${announcementChannel}.`
+          : `Muted ${member} for **${durationText}**, but I could not post in ${announcementChannel}.`,
+      });
+    }
+
+    if (interaction.commandName === 'unmute') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ content: 'You need the Moderate Members permission to do this.', ephemeral: true });
+      }
+
+      const user = interaction.options.getUser('user', true);
+      const config = db.getConfig(interaction.guildId);
+      if (!config?.announcement_channel_id) {
+        return interaction.reply({ content: 'Configure an announcement channel first using `/setup-attendance`.', ephemeral: true });
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (!member) {
+        return interaction.editReply({ content: 'That member is not in this server.' });
+      }
+      if (!member.isCommunicationDisabled()) {
+        return interaction.editReply({ content: `${member} does not have an active timeout.` });
+      }
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.editReply({ content: 'I need the Moderate Members permission to unmute members.' });
+      }
+      if (!member.moderatable) {
+        return interaction.editReply({ content: 'I cannot unmute that member because of their role hierarchy or server-owner status.' });
+      }
+
+      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      if (!announcementChannel?.isTextBased() || announcementChannel.isThread()) {
+        return interaction.editReply({ content: 'The configured announcement channel could not be found.' });
+      }
+      const channelPermissions = announcementChannel.permissionsFor(botMember);
+      if (!channelPermissions?.has(PermissionFlagsBits.ViewChannel)
+        || !channelPermissions.has(PermissionFlagsBits.SendMessages)
+        || !channelPermissions.has(PermissionFlagsBits.EmbedLinks)) {
+        return interaction.editReply({ content: 'I need View Channel, Send Messages, and Embed Links permissions in the configured announcement channel.' });
+      }
+
+      try {
+        await member.timeout(null, `Unmuted by ${interaction.user.tag}`);
+      } catch (error) {
+        console.error(`[moderation] Failed to unmute ${user.id}:`, error.message);
+        return interaction.editReply({ content: 'I could not unmute that member. Check my permissions and role hierarchy, then try again.' });
+      }
+
+      const notice = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('🔊 Member Unmuted')
+        .setDescription(`${member}'s timeout was removed by ${interaction.user}.`)
+        .setTimestamp();
+      const announced = await announcementChannel.send({
+        content: `🔊 ${member} was unmuted.`,
+        embeds: [notice],
+        allowedMentions: { users: [member.id] },
+      }).then(() => true).catch(error => {
+        console.error(`[moderation] Failed to announce unmute for ${user.id}:`, error.message);
+        return false;
+      });
+
+      return interaction.editReply({
+        content: announced
+          ? `Unmuted ${member} and announced it in ${announcementChannel}.`
+          : `Unmuted ${member}, but I could not post in ${announcementChannel}.`,
+      });
     }
 
     if (interaction.commandName === 'the-judge') {

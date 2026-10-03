@@ -52,7 +52,10 @@ nicknames.
   announcement cards use an accent color based on the new level and are posted
   in the message channel by default. `/level-config announcement-channel` lets a
   server manager choose a dedicated announcement channel. `/level-up user
-  levels` manually grants levels to a member; `/level` shows progress.
+  levels` manually grants levels to a member; `/level-demote user levels`
+  removes levels down to Level 1. Both commands refresh the nickname and
+  leaderboard and post a level change announcement when configured. `/level`
+  shows progress.
   `/level-leaderboard-config channel` chooses where the public leaderboard is
   posted. It keeps one message and edits it as XP changes; `/level-leaderboard`
   manually refreshes that post.
@@ -227,6 +230,8 @@ otherwise the bot effectively goes offline between visits.
 | `/poll channel outcome-channel access-role question options duration` | Manage Server perm | Open the poll channel to the access role, use 🟢 then 🔴, and announce the result before hiding the channel again. |
 | `/close-poll poll-id` | Manage Server perm | Close an active poll immediately, announce its current result, and hide the poll channel from its access role. |
 | `/forgive-inactive user` | Manage Server perm | Remove the inactive role and restore the member's roles from before the inactive transition. |
+| `/mute user duration reason` | Moderate Members perm | Timeout a member for a duration such as `1s`, `1m`, `1h`, or `1d` (maximum 28 days), then announce the duration and reason in the configured announcement channel. |
+| `/unmute user` | Moderate Members perm | Remove a member's active timeout and announce it in the configured announcement channel. |
 | `/post-attendance-now` | Anyone with access | Posts today's attendance message immediately (good for testing). |
 | `/restore-streak users streak` | Manage Server perm | Restores the same streak value and monthly shields for one or more members. Separate mentions or IDs with spaces or commas. |
 | `/streaks` | Anyone | Leaderboard embed of everyone's current streak. |

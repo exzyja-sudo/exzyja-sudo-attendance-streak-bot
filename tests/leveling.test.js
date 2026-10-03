@@ -92,6 +92,20 @@ test('message XP observes cooldowns, advances levels, and ranks users per guild'
     assert.equal(manualGrant.levels_added, 2);
     assert.deepEqual(db.getLevelLeaderboard('guild-a').map(row => row.user_id), ['user-b', 'user-c', 'user-a', 'user-d']);
     assert.deepEqual(db.getLevelLeaderboard('guild-b'), []);
+
+    const manualDemotion = db.demoteLevels('guild-a', 'user-b', 2);
+    assert.equal(manualDemotion.previous_level, 4);
+    assert.equal(manualDemotion.level, 2);
+    assert.equal(manualDemotion.xp_into_level, 50);
+    assert.equal(manualDemotion.levels_demoted, 2);
+    assert.equal(manualDemotion.xp_removed, 230);
+
+    const floorDemotion = db.demoteLevels('guild-a', 'user-b', 100);
+    assert.equal(floorDemotion.level, 1);
+    assert.equal(floorDemotion.xp_into_level, 50);
+    assert.equal(floorDemotion.levels_demoted, 1);
+    assert.equal(floorDemotion.total_xp, 50);
+
     db.setLevelAnnouncementChannel('guild-a', 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-a'), 'channel-123');
     assert.equal(db.getLevelAnnouncementChannel('guild-b'), null);
