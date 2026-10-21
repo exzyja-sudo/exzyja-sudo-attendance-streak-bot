@@ -931,6 +931,7 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/restore-streak users streak`** Managers restore streaks for multiple members and refresh their shields.',
             '**`/meetme user user-2...user-10`** Managers assign the configured MeetMe role to up to 10 members for 20 minutes. **`/close-meetme user user-2...user-10`** ends their active assignments early.',
             '**`/forgive-inactive user user-2...user-10`** Managers remove inactive status and restore saved roles for up to 10 members.',
+            '**`/sleep user user-2...user-10`** Managers assign the Sleeping Fool role and announce a supportive break message for up to 10 members. Members with this role are exempt from attendance-based inactive-role changes.',
             '**`/the-judge user user-2...user-10`** Managers place up to 10 members on inactive hold and announce them together.',
             '**`/mute user duration reason`** Moderators apply a timeout and announce it in the configured announcement channel. Durations: `1s`, `1m`, `1h`, or `1d` (maximum `28d`).',
             '**`/unmute user`** Moderators remove an active timeout and announce it in the configured announcement channel.',
@@ -2154,6 +2155,95 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.editReply({ content: `${results.join('\n')}${announcementStatus}` });
     }
 
+    if (interaction.commandName === 'sleep') {
+      if (!interaction.guild || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to do this in a server.', ephemeral: true });
+      }
+
+      const users = getSelectedUsers(interaction);
+      await interaction.deferReply({ ephemeral: true });
+
+      const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.editReply({ content: 'I need the Manage Roles permission to assign the Sleeping Fool role.' });
+      }
+
+      const configuredSleepRoleId = db.getSleepRole(interaction.guildId);
+      let sleepRole = configuredSleepRoleId
+        ? interaction.guild.roles.cache.get(configuredSleepRoleId)
+          || await interaction.guild.roles.fetch(configuredSleepRoleId).catch(() => null)
+        : null;
+      if (!sleepRole) {
+        sleepRole = interaction.guild.roles.cache.find(role => role.name === 'Sleeping Fool') || null;
+      }
+      if (!sleepRole) {
+        try {
+          sleepRole = await interaction.guild.roles.create({
+            name: 'Sleeping Fool',
+            reason: `Created for /sleep by ${interaction.user.tag}`,
+          });
+        } catch (error) {
+          console.error(`[sleep] Failed to create Sleeping Fool role in ${interaction.guildId}:`, error.message);
+          return interaction.editReply({ content: 'I could not create the Sleeping Fool role. Check my Manage Roles permission and role hierarchy.' });
+        }
+      }
+      db.setSleepRole(interaction.guildId, sleepRole.id);
+
+      if (sleepRole.managed || sleepRole.position >= botMember.roles.highest.position) {
+        return interaction.editReply({ content: `I can’t assign ${sleepRole} because it is managed or at/above my highest role. Move my top role above it in Server Settings → Roles.` });
+      }
+
+      const config = db.getConfig(interaction.guildId);
+      const announcementChannel = config?.announcement_channel_id
+        ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
+        : interaction.channel;
+      const announcementText = member => [
+        `**To our Sleeping Fool, ${member.displayName},**`,
+        '',
+        'We understand that you need some time for yourself and a break from the game. Don\'t pressure yourself to come back until you\'re ready. Take all the time you need to rest, breathe, and focus on what matters most to you.',
+        '',
+        'You\'ll always have a place here with us, and we\'ll be happy to see you again whenever you\'re ready. Take care of yourself, Fool. You matter to us beyond the game.',
+      ].join('\n');
+
+      const results = [];
+      for (const user of users) {
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          results.push(`❌ ${user} is not in this server.`);
+          continue;
+        }
+        if (member.roles.cache.has(sleepRole.id)) {
+          results.push(`⚠️ ${member} already has the Sleeping Fool role.`);
+          continue;
+        }
+
+        try {
+          await member.roles.add(sleepRole, `Placed on a break by ${interaction.user.tag}`);
+        } catch (error) {
+          console.error(`[sleep] Failed to assign Sleeping Fool role to ${member.user.tag}:`, error.message);
+          results.push(`❌ Could not assign the Sleeping Fool role to ${member}.`);
+          continue;
+        }
+
+        if (!announcementChannel?.isTextBased() || !announcementChannel.send) {
+          results.push(`✅ Assigned the Sleeping Fool role to ${member}, but I could not find an announcement channel.`);
+          continue;
+        }
+        const announced = await announcementChannel.send({
+          content: announcementText(member),
+          allowedMentions: { parse: [] },
+        }).then(() => true).catch(error => {
+          console.error(`[sleep] Failed to announce break for ${member.user.tag}:`, error.message);
+          return false;
+        });
+        results.push(announced
+          ? `✅ Assigned the Sleeping Fool role to ${member} and announced their break.`
+          : `⚠️ Assigned the Sleeping Fool role to ${member}, but the announcement could not be posted.`);
+      }
+
+      return interaction.editReply({ content: results.join('\n') });
+    }
+
     if (interaction.commandName === 'mute') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
         return interaction.reply({ content: 'You need the Moderate Members permission to do this.', ephemeral: true });
@@ -2342,7 +2432,7 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
           if (config.role_automation_enabled === 1) {
             await saveCurrentMemberRoles(member, config);
-            const updated = await updateAttendanceRoles(member, config, true);
+            const updated = await updateAttendanceRoles(member, config, true, true);
             if (!updated) throw new Error('Role automation skipped this member.');
           } else {
             await member.roles.add(config.inactive_role_id);

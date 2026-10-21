@@ -307,6 +307,15 @@ const commands = [
 
   addUserOptions(
     new SlashCommandBuilder()
+      .setName('sleep')
+      .setDescription('Assign the Sleeping Fool role and announce a break for up to 10 members')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    'Member taking a break from the game',
+    'Additional member taking a break from the game',
+  ).toJSON(),
+
+  addUserOptions(
+    new SlashCommandBuilder()
       .setName('the-judge')
       .setDescription('Apply the inactive role to up to 10 members and announce the holds'),
     'Member to place on hold',

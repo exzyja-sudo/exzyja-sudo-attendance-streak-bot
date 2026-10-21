@@ -160,6 +160,11 @@ db.exec(`
     expires_at INTEGER NOT NULL,
     removed_at INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS sleep_roles (
+    guild_id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL
+  );
 `);
 
 // ---- lightweight migration: add shield columns to older DBs without them ----
@@ -508,6 +513,17 @@ function getConfig(guildId) {
   return db.prepare('SELECT * FROM config WHERE guild_id = ?').get(guildId);
 }
 
+function setSleepRole(guildId, roleId) {
+  db.prepare(`
+    INSERT INTO sleep_roles (guild_id, role_id) VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET role_id = excluded.role_id
+  `).run(guildId, roleId);
+}
+
+function getSleepRole(guildId) {
+  return db.prepare('SELECT role_id FROM sleep_roles WHERE guild_id = ?').get(guildId)?.role_id;
+}
+
 function getAllConfigs() {
   return db.prepare('SELECT * FROM config').all();
 }
@@ -853,6 +869,8 @@ module.exports = {
   setLevelNicknameEnabled,
   setConfig,
   getConfig,
+  setSleepRole,
+  getSleepRole,
   getAllConfigs,
   createScheduledAnnouncement,
   getAllScheduledAnnouncements,

@@ -19,9 +19,13 @@ const FIELD_CHAR_BUDGET = 1000;
 const MAX_CHECKIN_FIELDS = 4;
 
 function hasExemptionRole(member, exemptionRoleIds) {
-  if (!exemptionRoleIds) return false;
-  const roleIds = exemptionRoleIds.split(/[\s,]+/).filter(Boolean);
+  const roleIds = (exemptionRoleIds || '').split(/[\s,]+/).filter(Boolean);
   return roleIds.some(roleId => member.roles.cache.has(roleId));
+}
+
+function hasSleepRole(member) {
+  const sleepRoleId = db.getSleepRole(member.guild.id);
+  return Boolean(sleepRoleId && member.roles.cache.has(sleepRoleId));
 }
 
 /**
@@ -136,7 +140,7 @@ function getMemberRoleSnapshot(member) {
 async function saveCurrentMemberRoles(member, config) {
   if (!member || !member.roles || !member.roles.cache) return false;
   if (config.role_automation_enabled !== 1 || !config.inactive_role_id) return false;
-  if (hasExemptionRole(member, config.exemption_role_id)) return false;
+  if (hasExemptionRole(member, config.exemption_role_id) || hasSleepRole(member)) return false;
 
   const snapshot = getMemberRoleSnapshot(member);
   if (!snapshot.length) return false;
@@ -145,7 +149,7 @@ async function saveCurrentMemberRoles(member, config) {
   return true;
 }
 
-async function updateAttendanceRoles(member, config, inactive) {
+async function updateAttendanceRoles(member, config, inactive, allowSleepingMember = false) {
   if (!member) {
     console.warn('[roles] Cannot update roles: member could not be fetched.');
     return false;
@@ -154,7 +158,7 @@ async function updateAttendanceRoles(member, config, inactive) {
     console.warn(`[roles] Skipping ${member.user.tag}: automation is disabled or no inactive role is configured.`);
     return false;
   }
-  if (hasExemptionRole(member, config.exemption_role_id)) {
+  if (hasExemptionRole(member, config.exemption_role_id) || (!allowSleepingMember && hasSleepRole(member))) {
     console.log(`[roles] Skipping exempt member ${member.user.tag}.`);
     return false;
   }
