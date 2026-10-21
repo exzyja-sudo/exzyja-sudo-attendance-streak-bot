@@ -67,10 +67,11 @@ nicknames.
   inactive role and restore saved roles for up to 10 members. `/the-judge user
   [user-2...user-10]` applies the inactive role to up to 10 members at once.
 - Managers can use `/sleep user [user-2...user-10]` to give up to 10 members a
-  break announcement and the `Sleeping Fool` role. Members with that role are
-  exempt from attendance-based inactive-role changes. The role is created
-  automatically and announcements use the configured announcement channel, or
-  the command channel if none is configured.
+  break announcement and the `Sleeping Fool` role. Existing roles are kept.
+  All newly assigned members are mentioned together in one embed announcement.
+  Members with the sleep role are exempt from attendance-based inactive-role
+  changes. The role is created automatically and announcements use the
+  configured announcement channel, or the command channel if none is configured.
 - Role automation is optional. Set `enable-role-automation` to `true` in
   `/setup-attendance` and choose an inactive role to activate it. Leave it
   false to run attendance and streak tracking without any role changes.
@@ -237,7 +238,7 @@ otherwise the bot effectively goes offline between visits.
 | `/poll channel outcome-channel access-role question options duration` | Manage Server perm | Open the poll channel to the access role, use 🟢 then 🔴, and announce the result before hiding the channel again. |
 | `/close-poll poll-id` | Manage Server perm | Close an active poll immediately, announce its current result, and hide the poll channel from its access role. |
 | `/forgive-inactive user [user-2...user-10]` | Manage Server perm | Remove the inactive role and restore saved roles for up to 10 members. |
-| `/sleep user [user-2...user-10]` | Manage Server perm | Assign the Sleeping Fool role and post a supportive break announcement for up to 10 members; the role exempts members from attendance-based inactive-role changes. |
+| `/sleep user [user-2...user-10]` | Manage Server perm | Assign the Sleeping Fool role without removing existing roles, then mention all newly assigned members in one supportive embed announcement; the role exempts members from attendance-based inactive-role changes. |
 | `/the-judge user [user-2...user-10]` | Manage Server perm | Place up to 10 members on inactive hold and announce them together. |
 | `/mute user duration reason` | Moderate Members perm | Timeout a member for a duration such as `1s`, `1m`, `1h`, or `1d` (maximum 28 days), then announce the duration and reason in the configured announcement channel. |
 | `/unmute user` | Moderate Members perm | Remove a member's active timeout and announce it in the configured announcement channel. |
