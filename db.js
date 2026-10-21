@@ -165,6 +165,17 @@ db.exec(`
     guild_id TEXT PRIMARY KEY,
     role_id TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS sleep_role_exemptions (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    PRIMARY KEY (guild_id, role_id)
+  );
+`);
+
+db.exec(`
+  INSERT OR IGNORE INTO sleep_role_exemptions (guild_id, role_id)
+  SELECT guild_id, role_id FROM sleep_roles;
 `);
 
 // ---- lightweight migration: add shield columns to older DBs without them ----
@@ -514,14 +525,15 @@ function getConfig(guildId) {
 }
 
 function setSleepRole(guildId, roleId) {
-  db.prepare(`
-    INSERT INTO sleep_roles (guild_id, role_id) VALUES (?, ?)
-    ON CONFLICT(guild_id) DO UPDATE SET role_id = excluded.role_id
-  `).run(guildId, roleId);
+  db.prepare('INSERT OR IGNORE INTO sleep_role_exemptions (guild_id, role_id) VALUES (?, ?)').run(guildId, roleId);
 }
 
 function getSleepRole(guildId) {
-  return db.prepare('SELECT role_id FROM sleep_roles WHERE guild_id = ?').get(guildId)?.role_id;
+  return db.prepare('SELECT role_id FROM sleep_role_exemptions WHERE guild_id = ? ORDER BY role_id LIMIT 1').get(guildId)?.role_id;
+}
+
+function getSleepRoles(guildId) {
+  return db.prepare('SELECT role_id FROM sleep_role_exemptions WHERE guild_id = ? ORDER BY role_id').all(guildId).map(row => row.role_id);
 }
 
 function getAllConfigs() {
@@ -871,6 +883,7 @@ module.exports = {
   getConfig,
   setSleepRole,
   getSleepRole,
+  getSleepRoles,
   getAllConfigs,
   createScheduledAnnouncement,
   getAllScheduledAnnouncements,

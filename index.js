@@ -455,8 +455,8 @@ async function refreshLevelLeaderboard(guildId) {
   }
 }
 
-function getSelectedUsers(interaction) {
-  const users = Array.from({ length: 10 }, (_, index) =>
+function getSelectedUsers(interaction, count = 10) {
+  const users = Array.from({ length: count }, (_, index) =>
     interaction.options.getUser(index === 0 ? 'user' : `user-${index + 1}`)
   ).filter(Boolean);
   return [...new Map(users.map(user => [user.id, user])).values()];
@@ -931,7 +931,7 @@ client.on(Events.InteractionCreate, async interaction => {
             '**`/restore-streak users streak`** Managers restore streaks for multiple members and refresh their shields.',
             '**`/meetme user user-2...user-10`** Managers assign the configured MeetMe role to up to 10 members for 20 minutes. **`/close-meetme user user-2...user-10`** ends their active assignments early.',
             '**`/forgive-inactive user user-2...user-10`** Managers remove inactive status and restore saved roles for up to 10 members.',
-            '**`/sleep user user-2...user-10`** Managers assign the Sleeping Fool role without removing existing roles, then mention all newly assigned members in one supportive embed announcement. Members with this role are exempt from attendance-based inactive-role changes.',
+            '**`/sleep role user user-2...user-20`** Managers choose a role and assign it to up to 20 members without removing existing roles. The bot mentions everyone in one supportive embed in the configured attendance announcement channel. Members with the selected role are exempt from automatic inactive-role assignment when attendance resets their streak.',
             '**`/the-judge user user-2...user-10`** Managers place up to 10 members on inactive hold and announce them together.',
             '**`/mute user duration reason`** Moderators apply a timeout and announce it in the configured announcement channel. Durations: `1s`, `1m`, `1h`, or `1d` (maximum `28d`).',
             '**`/unmute user`** Moderators remove an active timeout and announce it in the configured announcement channel.',
@@ -2160,43 +2160,37 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'You need the Manage Server permission to do this in a server.', ephemeral: true });
       }
 
-      const users = getSelectedUsers(interaction);
+      const sleepRole = interaction.options.getRole('role', true);
+      const users = getSelectedUsers(interaction, 20);
       await interaction.deferReply({ ephemeral: true });
 
       const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
       if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        return interaction.editReply({ content: 'I need the Manage Roles permission to assign the Sleeping Fool role.' });
+        return interaction.editReply({ content: 'I need the Manage Roles permission to assign the selected role.' });
       }
 
-      const configuredSleepRoleId = db.getSleepRole(interaction.guildId);
-      let sleepRole = configuredSleepRoleId
-        ? interaction.guild.roles.cache.get(configuredSleepRoleId)
-          || await interaction.guild.roles.fetch(configuredSleepRoleId).catch(() => null)
-        : null;
-      if (!sleepRole) {
-        sleepRole = interaction.guild.roles.cache.find(role => role.name === 'Sleeping Fool') || null;
+      if (sleepRole.guild.id !== interaction.guildId || sleepRole.id === interaction.guild.id || sleepRole.managed) {
+        return interaction.editReply({ content: 'Choose a normal, assignable role from this server.' });
       }
-      if (!sleepRole) {
-        try {
-          sleepRole = await interaction.guild.roles.create({
-            name: 'Sleeping Fool',
-            reason: `Created for /sleep by ${interaction.user.tag}`,
-          });
-        } catch (error) {
-          console.error(`[sleep] Failed to create Sleeping Fool role in ${interaction.guildId}:`, error.message);
-          return interaction.editReply({ content: 'I could not create the Sleeping Fool role. Check my Manage Roles permission and role hierarchy.' });
-        }
-      }
-      db.setSleepRole(interaction.guildId, sleepRole.id);
-
-      if (sleepRole.managed || sleepRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({ content: `I can’t assign ${sleepRole} because it is managed or at/above my highest role. Move my top role above it in Server Settings → Roles.` });
+      if (sleepRole.position >= botMember.roles.highest.position) {
+        return interaction.editReply({ content: `I can’t assign ${sleepRole} because it is at or above my highest role. Move my top role above it in Server Settings → Roles.` });
       }
 
       const config = db.getConfig(interaction.guildId);
-      const announcementChannel = config?.announcement_channel_id
-        ? await client.channels.fetch(config.announcement_channel_id).catch(() => null)
-        : interaction.channel;
+      if (!config?.announcement_channel_id) {
+        return interaction.editReply({ content: 'Configure the attendance announcement channel with `/setup-attendance` before using `/sleep`.' });
+      }
+      const announcementChannel = await client.channels.fetch(config.announcement_channel_id).catch(() => null);
+      if (!announcementChannel?.isTextBased() || announcementChannel.isThread()) {
+        return interaction.editReply({ content: 'The configured attendance announcement channel could not be found or is not a regular text channel.' });
+      }
+      const announcementPermissions = announcementChannel.permissionsFor(botMember);
+      if (!announcementPermissions?.has(PermissionFlagsBits.ViewChannel)
+        || !announcementPermissions.has(PermissionFlagsBits.SendMessages)
+        || !announcementPermissions.has(PermissionFlagsBits.EmbedLinks)) {
+        return interaction.editReply({ content: 'I need View Channel, Send Messages, and Embed Links permissions in the configured attendance announcement channel.' });
+      }
+      db.setSleepRole(interaction.guildId, sleepRole.id);
 
       const results = [];
       const sleepingMembers = [];
@@ -2207,31 +2201,33 @@ client.on(Events.InteractionCreate, async interaction => {
           continue;
         }
         if (member.roles.cache.has(sleepRole.id)) {
-          results.push(`⚠️ ${member} already has the Sleeping Fool role.`);
+          sleepingMembers.push(member);
+          results.push(`✅ ${member} already has ${sleepRole}.`);
           continue;
         }
 
         try {
           await member.roles.add(sleepRole, `Placed on a break by ${interaction.user.tag}`);
         } catch (error) {
-          console.error(`[sleep] Failed to assign Sleeping Fool role to ${member.user.tag}:`, error.message);
-          results.push(`❌ Could not assign the Sleeping Fool role to ${member}.`);
+          console.error(`[sleep] Failed to assign ${sleepRole.name} to ${member.user.tag}:`, error.message);
+          results.push(`❌ Could not assign ${sleepRole} to ${member}.`);
           continue;
         }
 
         sleepingMembers.push(member);
-        results.push(`✅ Assigned the Sleeping Fool role to ${member}.`);
+        results.push(`✅ Assigned ${sleepRole} to ${member}.`);
       }
 
       let announced = false;
-      if (sleepingMembers.length && announcementChannel?.isTextBased() && announcementChannel.send) {
+      if (sleepingMembers.length) {
         const notice = new EmbedBuilder()
           .setColor(0x5865f2)
-          .setTitle('🌙 SLEEPING FOOL NOTICE 🌙')
-          .addFields(sleepingMembers.map(member => ({
-            name: `To our Sleeping Fool, ${member.displayName},`,
-            value: 'We understand that you need some time for yourself and a break from the game. Don’t pressure yourself to come back until you’re ready. Take all the time you need to rest, breathe, and focus on what matters most to you.\n\nYou’ll always have a place here with us, and we’ll be happy to see you again whenever you’re ready. Take care of yourself, Fool. You matter to us beyond the game.',
-          })))
+          .setTitle(`🌙 ${sleepRole.name.toUpperCase()} NOTICE 🌙`)
+          .setDescription('We understand that you need some time for yourself and a break from the game. Don’t pressure yourself to come back until you’re ready. Take all the time you need to rest, breathe, and focus on what matters most to you.\n\nYou’ll always have a place here with us, and we’ll be happy to see you again whenever you’re ready. Take care of yourself. You matter to us beyond the game.')
+          .addFields({
+            name: 'Taking a break',
+            value: sleepingMembers.map(member => `• ${member.displayName}`).join('\n'),
+          })
           .setFooter({ text: 'Take care of yourself — you matter to us beyond the game.' })
           .setTimestamp();
 
@@ -2246,10 +2242,7 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (sleepingMembers.length && !announced) {
-        const status = announcementChannel?.isTextBased() && announcementChannel.send
-          ? 'The roles were assigned, but I could not post the announcement.'
-          : 'The roles were assigned, but I could not find an announcement channel.';
-        results.push(`⚠️ ${status}`);
+        results.push('⚠️ The roles were assigned, but I could not post the announcement in the configured attendance announcement channel.');
       } else if (announced) {
         results.push(`📢 Announced all ${sleepingMembers.length} member${sleepingMembers.length === 1 ? '' : 's'} together in ${announcementChannel}.`);
       }

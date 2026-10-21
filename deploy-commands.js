@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
-function addUserOptions(command, firstDescription, additionalDescription) {
-  for (let index = 1; index <= 10; index += 1) {
+function addUserOptions(command, firstDescription, additionalDescription, count = 10) {
+  for (let index = 1; index <= count; index += 1) {
     command.addUserOption(opt =>
       opt.setName(index === 1 ? 'user' : `user-${index}`)
         .setDescription(index === 1 ? firstDescription : additionalDescription)
@@ -308,10 +308,13 @@ const commands = [
   addUserOptions(
     new SlashCommandBuilder()
       .setName('sleep')
-      .setDescription('Assign the Sleeping Fool role and announce a break for up to 10 members')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+      .setDescription('Assign a break role to up to 20 members and announce them')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addRoleOption(opt =>
+        opt.setName('role').setDescription('Role to assign and exempt from attendance inactive-role changes').setRequired(true)),
     'Member taking a break from the game',
     'Additional member taking a break from the game',
+    20,
   ).toJSON(),
 
   addUserOptions(

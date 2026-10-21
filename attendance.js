@@ -24,8 +24,7 @@ function hasExemptionRole(member, exemptionRoleIds) {
 }
 
 function hasSleepRole(member) {
-  const sleepRoleId = db.getSleepRole(member.guild.id);
-  return Boolean(sleepRoleId && member.roles.cache.has(sleepRoleId));
+  return db.getSleepRoles(member.guild.id).some(roleId => member.roles.cache.has(roleId));
 }
 
 /**
