@@ -308,6 +308,7 @@ http
   .listen(PORT, () => console.log(`[http] Health check server listening on port ${PORT}`));
 
 const db = require('./db');
+const { MANAGE_GUILD_COMMANDS } = require('./access-commands');
 const { getLevelColor } = require('./level-colors');
 const { syncLevelNickname } = require('./level-nicknames');
 const { postAttendance, buildLeaderboardEmbed, buildDailyEmbed, saveCurrentMemberRoles, updateAttendanceRoles, forgiveInactiveRole, CHECK_EMOJI } = require('./attendance');
@@ -316,6 +317,17 @@ const { todayStr, yesterdayStr, monthStr, minutesSinceMidnight } = require('./ut
 const POLL_EMOJIS = ['🟢', '🔴'];
 const MEETME_DURATION_MS = 20 * 60 * 1000;
 const MESSAGE_XP_COOLDOWN_MS = db.XP_COOLDOWN_MS;
+
+function hasManageGuildCommandAccess(interaction) {
+  return Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
+    || (
+      interaction.guildId
+      && MANAGE_GUILD_COMMANDS.includes(interaction.commandName)
+      && db.hasCommandAccess(interaction.guildId, interaction.user.id, interaction.commandName)
+    )
+  );
+}
 
 function buildLevelUpEmbed({ username, previousLevel, level, xpAdded, totalXp, xpIntoLevel, xpRequired }) {
   return new EmbedBuilder()
@@ -927,6 +939,7 @@ client.on(Events.InteractionCreate, async interaction => {
           .setColor(0xe67e22)
           .setTitle('Roles & Moderation')
           .setDescription([
+            '**`/access action user command`** Managers can grant or remove a member’s access to one selected server-management command.',
             '**`/clear-messages channel amount`** Members with Manage Messages can review and confirm deletion of 1–100 recent messages. Messages older than 14 days are excluded.',
             '**`/restore-streak users streak`** Managers restore streaks for multiple members and refresh their shields.',
             '**`/meetme user user-2...user-10`** Managers assign the configured MeetMe role to up to 10 members for 20 minutes. **`/close-meetme user user-2...user-10`** ends their active assignments early.',
@@ -940,6 +953,44 @@ client.on(Events.InteractionCreate, async interaction => {
       ];
 
       return interaction.reply({ embeds: helpEmbeds });
+    }
+
+    if (interaction.commandName === 'access') {
+      if (!interaction.guild || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'You need the Manage Server permission to manage command access.', ephemeral: true });
+      }
+
+      const action = interaction.options.getString('action', true);
+      const target = interaction.options.getUser('user', true);
+      const commandName = interaction.options.getString('command', true);
+      if (!['grant', 'revoke'].includes(action) || !MANAGE_GUILD_COMMANDS.includes(commandName)) {
+        return interaction.reply({ content: 'Choose a valid access action and server command.', ephemeral: true });
+      }
+      if (action === 'grant') {
+        const member = interaction.options.getMember('user');
+        if (!member) {
+          return interaction.reply({ content: 'You can only grant access to a current member of this server.', ephemeral: true });
+        }
+        if (target.bot) {
+          return interaction.reply({ content: 'Command access can only be granted to a server member, not a bot.', ephemeral: true });
+        }
+
+        const granted = db.grantCommandAccess(interaction.guildId, target.id, commandName);
+        return interaction.reply({
+          content: granted
+            ? `✅ Granted ${target} access to \`/${commandName}\`.`
+            : `${target} already has access to \`/${commandName}\`.`,
+          ephemeral: true,
+        });
+      }
+
+      const revoked = db.revokeCommandAccess(interaction.guildId, target.id, commandName);
+      return interaction.reply({
+        content: revoked
+          ? `✅ Removed ${target}’s access to \`/${commandName}\`.`
+          : `${target} did not have access to \`/${commandName}\`.`,
+        ephemeral: true,
+      });
     }
 
     if (interaction.commandName === 'clear-messages') {
@@ -1027,7 +1078,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'setup-attendance') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1115,7 +1166,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'announcement') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1178,7 +1229,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'accept') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1287,7 +1338,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'accept-config') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1309,7 +1360,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'poll') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1402,7 +1453,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'close-poll') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1422,7 +1473,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'schedule-announcement') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1519,7 +1570,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'scheduled-announcements') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1557,7 +1608,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'delete-scheduled-announcement') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1624,7 +1675,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-up') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1669,7 +1720,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-demote') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1719,7 +1770,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-config') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1739,7 +1790,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-leaderboard-config') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1776,7 +1827,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'level-nickname') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1797,7 +1848,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'restore-streak') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1862,7 +1913,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'birthday') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1900,7 +1951,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'meetme') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -1990,7 +2041,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'close-meetme') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -2078,7 +2129,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'forgive-inactive') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 
@@ -2156,7 +2207,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'sleep') {
-      if (!interaction.guild || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!interaction.guild || !hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this in a server.', ephemeral: true });
       }
 
@@ -2396,7 +2447,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'the-judge') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      if (!hasManageGuildCommandAccess(interaction)) {
         return interaction.reply({ content: 'You need the Manage Server permission to do this.', ephemeral: true });
       }
 

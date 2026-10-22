@@ -171,6 +171,13 @@ db.exec(`
     role_id TEXT NOT NULL,
     PRIMARY KEY (guild_id, role_id)
   );
+
+  CREATE TABLE IF NOT EXISTS command_access (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    command_name TEXT NOT NULL,
+    PRIMARY KEY (guild_id, user_id, command_name)
+  );
 `);
 
 db.exec(`
@@ -448,6 +455,27 @@ function setLevelBadgeRole(guildId, level, roleId) {
 function getLevelBadgeRoles(guildId) {
   return db.prepare('SELECT level, role_id FROM level_badge_roles WHERE guild_id = ? ORDER BY level')
     .all(guildId);
+}
+
+function grantCommandAccess(guildId, userId, commandName) {
+  return db.prepare(`
+    INSERT OR IGNORE INTO command_access (guild_id, user_id, command_name)
+    VALUES (?, ?, ?)
+  `).run(guildId, userId, commandName).changes > 0;
+}
+
+function revokeCommandAccess(guildId, userId, commandName) {
+  return db.prepare(`
+    DELETE FROM command_access
+    WHERE guild_id = ? AND user_id = ? AND command_name = ?
+  `).run(guildId, userId, commandName).changes > 0;
+}
+
+function hasCommandAccess(guildId, userId, commandName) {
+  return Boolean(db.prepare(`
+    SELECT 1 FROM command_access
+    WHERE guild_id = ? AND user_id = ? AND command_name = ?
+  `).get(guildId, userId, commandName));
 }
 
 function getLevelNickname(guildId, userId) {
@@ -875,6 +903,9 @@ module.exports = {
   getLevelBadgeRoleId,
   setLevelBadgeRole,
   getLevelBadgeRoles,
+  grantCommandAccess,
+  revokeCommandAccess,
+  hasCommandAccess,
   getLevelNickname,
   setLevelNickname,
   getLevelNicknameEnabled,

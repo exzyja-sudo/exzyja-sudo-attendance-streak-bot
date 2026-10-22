@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { MANAGE_GUILD_COMMANDS } = require('./access-commands');
 
 function addUserOptions(command, firstDescription, additionalDescription, count = 10) {
   for (let index = 1; index <= count; index += 1) {
@@ -15,6 +16,26 @@ const commands = [
   new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show the bot commands and feature guide')
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('access')
+    .setDescription('Grant or remove a member’s access to a selected server command')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption(opt =>
+      opt.setName('action').setDescription('Grant or remove this command access').setRequired(true)
+        .addChoices(
+          { name: 'Grant access', value: 'grant' },
+          { name: 'Remove access', value: 'revoke' },
+        ))
+    .addUserOption(opt =>
+      opt.setName('user').setDescription('Member whose command access will change').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('command').setDescription('Command to grant or remove access for').setRequired(true)
+        .addChoices(...MANAGE_GUILD_COMMANDS.map(commandName => ({
+          name: `/${commandName}`,
+          value: commandName,
+        }))))
     .toJSON(),
 
   new SlashCommandBuilder()
@@ -91,7 +112,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('accept')
     .setDescription('Replace members’ roles with the selected role and welcome them')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addUserOption(opt =>
       opt.setName('user').setDescription('First member to accept').setRequired(true))
     .addRoleOption(opt =>
@@ -119,7 +139,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('accept-config')
     .setDescription('Choose where /accept welcome announcements are posted')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption(opt =>
       opt.setName('announcement-channel').setDescription('Channel for acceptance welcome messages').setRequired(true))
     .toJSON(),
@@ -162,13 +181,11 @@ const commands = [
   new SlashCommandBuilder()
     .setName('scheduled-announcements')
     .setDescription('List this server’s scheduled announcements and their IDs')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .toJSON(),
 
   new SlashCommandBuilder()
     .setName('delete-scheduled-announcement')
     .setDescription('Delete one of this server’s scheduled announcements')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addIntegerOption(opt =>
       opt.setName('id').setDescription('ID shown by /scheduled-announcements').setRequired(true).setMinValue(1))
     .toJSON(),
@@ -227,7 +244,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('level-leaderboard-config')
     .setDescription('Choose where the server level leaderboard is posted')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption(opt =>
       opt.setName('channel').setDescription('Channel for the level leaderboard').setRequired(true))
     .toJSON(),
@@ -244,7 +260,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('level-demote')
     .setDescription('Remove levels from a member')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addUserOption(opt =>
       opt.setName('user').setDescription('Member who will lose levels').setRequired(true))
     .addIntegerOption(opt =>
@@ -309,7 +324,6 @@ const commands = [
     new SlashCommandBuilder()
       .setName('sleep')
       .setDescription('Assign a break role to up to 20 members and announce them')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
       .addRoleOption(opt =>
         opt.setName('role').setDescription('Role to assign and exempt from attendance inactive-role changes').setRequired(true)),
     'Member taking a break from the game',

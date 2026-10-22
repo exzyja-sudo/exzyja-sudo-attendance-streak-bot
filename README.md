@@ -230,6 +230,7 @@ otherwise the bot effectively goes offline between visits.
 
 | Command | Who | Description |
 |---|---|---|
+| `/access action user command` | Manage Server perm | Grant or remove a member's access to one selected server-management command. |
 | `/setup-attendance channel [announcement-channel] time [timezone] [title] [message] [enable-role-automation] [active-role] [inactive-role] [meetme-role] [exemption-roles]` | Manage Server perm | Configure the daily post, optional inactive-member announcements, role automation, and the role used by `/meetme`. |
 | `/schedule-announcement channel date time timezone type recurrence [user] [title] [subject] [message]` | Manage Server perm | Schedule a one-time or yearly general announcement or birthday celebration. |
 | `/announcement channel title subject message` | Manage Server perm | Post an announcement immediately. |
@@ -246,6 +247,11 @@ otherwise the bot effectively goes offline between visits.
 | `/restore-streak users streak` | Manage Server perm | Restores the same streak value and monthly shields for one or more members. Separate mentions or IDs with spaces or commas. |
 | `/streaks` | Anyone | Leaderboard embed of everyone's current streak. |
 | `/my-streak` | Anyone | Private reply with your own current/best streak. |
+
+Use `/access` to choose **Grant access** or **Remove access**, select a member,
+and choose one command from the list. This grants only that bot command, not
+the Discord Manage Server permission. Commands protected by other Discord
+permissions (`/mute`, `/unmute`, and `/clear-messages`) are not in the list.
 
 To schedule a general announcement, use `type: General announcement`, choose `Once`,
 `Every day`, `Every week`, or `Every year`, and provide the title, subject, and message.

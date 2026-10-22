@@ -1,0 +1,25 @@
+const MANAGE_GUILD_COMMANDS = [
+  'setup-attendance',
+  'announcement',
+  'accept',
+  'accept-config',
+  'poll',
+  'close-poll',
+  'schedule-announcement',
+  'scheduled-announcements',
+  'delete-scheduled-announcement',
+  'level-up',
+  'level-demote',
+  'level-config',
+  'level-leaderboard-config',
+  'level-nickname',
+  'restore-streak',
+  'birthday',
+  'meetme',
+  'close-meetme',
+  'forgive-inactive',
+  'sleep',
+  'the-judge',
+];
+
+module.exports = { MANAGE_GUILD_COMMANDS };
